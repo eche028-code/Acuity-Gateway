@@ -1,0 +1,96 @@
+// Acuity Gateway — Express entry point.
+//
+// Boot order: migrate DB → wire security/middleware → mount webhook receiver
+// (before the JSON parser, so it can read the raw body) → mount API → serve the
+// static portal → start listening → kick off the initial sync and the periodic
+// refresh / health-check jobs.
+import express from 'express';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import pinoHttp from 'pino-http';
+import { config } from './config.js';
+import { logger } from './lib/logger.js';
+import { migrate } from './db/index.js';
+import {
+  helmetMiddleware,
+  corsMiddleware,
+  globalRateLimit,
+} from './middleware/security.js';
+import { portal } from './routes/portal.js';
+import { webhooks } from './routes/webhooks.js';
+import { refreshAvailability } from './services/availability.js';
+import { checkHealth, registerWebhook } from './services/sync.js';
+
+migrate();
+
+const app = express();
+const here = dirname(fileURLToPath(import.meta.url));
+
+// Behind Nginx / the Lightsail edge in production. Use a SPECIFIC hop count,
+// never blanket `true` (a spoofed X-Forwarded-For could otherwise evade the
+// per-IP rate limiter). No proxy in local dev.
+app.set('trust proxy', config.isProd ? 1 : false);
+app.disable('x-powered-by');
+
+app.use(pinoHttp({ logger }));
+app.use(helmetMiddleware());
+app.use(corsMiddleware());
+app.use(globalRateLimit());
+
+// Webhook receiver mounted BEFORE express.json — it needs the raw body for
+// HMAC signature verification.
+app.use('/webhooks', webhooks);
+
+app.use(express.json({ limit: '100kb' }));
+
+// Booking API.
+app.use('/api', portal);
+
+// Static booking portal (the iframe target).
+app.use(express.static(resolve(here, '../public')));
+
+// Container/infra health probe.
+app.get('/healthz', (_req, res) => res.json({ ok: true }));
+
+// Central error handler.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  logger.error({ err: err.message, stack: err.stack }, 'unhandled error');
+  res.status(500).json({ error: 'internal_error' });
+});
+
+const server = app.listen(config.port, async () => {
+  logger.info(
+    { port: config.port, env: config.env, acuityBase: config.acuity.apiBase },
+    'Acuity Gateway listening',
+  );
+
+  // Initial sync — non-fatal if Acuity is down (we serve the cache).
+  try {
+    await refreshAvailability();
+  } catch (err) {
+    logger.warn({ err: err.message }, 'initial availability refresh failed');
+  }
+  try {
+    await registerWebhook();
+  } catch (err) {
+    logger.warn({ err: err.message }, 'initial webhook registration failed');
+  }
+
+  // Periodic jobs.
+  setInterval(() => {
+    refreshAvailability().catch((err) => logger.warn({ err: err.message }, 'refresh job failed'));
+  }, config.availability.refreshMs);
+
+  setInterval(() => {
+    checkHealth().catch((err) => logger.warn({ err: err.message }, 'health job failed'));
+  }, 30_000);
+});
+
+// Graceful shutdown.
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    logger.info({ sig }, 'shutting down');
+    server.close(() => process.exit(0));
+  });
+}

@@ -1,0 +1,2 @@
+# The SQLite database files live in this directory at runtime.
+# The directory is tracked; the *.sqlite files inside it are git-ignored.

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Book an appointment</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="widget" aria-live="polite">
+      <header class="widget__header">
+        <h1>Book an appointment</h1>
+        <p id="mode-banner" class="banner" hidden></p>
+      </header>
+
+      <!-- Step 1: service -->
+      <section id="step-service" class="step">
+        <h2 class="step__title"><span class="step__num">1</span> Choose a service</h2>
+        <div id="service-list" class="options" role="list">
+          <p class="muted">Loading services…</p>
+        </div>
+      </section>
+
+      <!-- Step 2: date & time -->
+      <section id="step-slot" class="step" hidden>
+        <h2 class="step__title"><span class="step__num">2</span> Pick a time</h2>
+        <p class="muted" id="slot-subtitle"></p>
+        <div class="slot-grid">
+          <div>
+            <h3 class="sub">Date</h3>
+            <div id="date-list" class="options options--compact" role="list"></div>
+          </div>
+          <div>
+            <h3 class="sub">Time</h3>
+            <div id="time-list" class="options options--compact" role="list">
+              <p class="muted">Select a date first.</p>
+            </div>
+          </div>
+        </div>
+        <button class="link-btn" data-back="service" type="button">← Back to services</button>
+      </section>
+
+      <!-- Step 3: identity -->
+      <section id="step-identity" class="step" hidden>
+        <h2 class="step__title"><span class="step__num">3</span> Your details</h2>
+        <div class="tabs" role="tablist">
+          <button class="tab is-active" id="tab-existing" data-tab="existing" role="tab" type="button">
+            Existing patient
+          </button>
+          <button class="tab" id="tab-new" data-tab="new" role="tab" type="button">
+            New patient
+          </button>
+        </div>
+
+        <div id="pane-existing" class="pane">
+          <p class="muted">Find your record by phone number or name.</p>
+          <div class="search-row">
+            <input id="search-input" type="text" inputmode="tel" autocomplete="off"
+                   placeholder="Phone number or name" aria-label="Search by phone or name" />
+            <button id="search-btn" class="btn btn--ghost" type="button">Search</button>
+          </div>
+          <div id="search-results" class="results"></div>
+        </div>
+
+        <div id="pane-new" class="pane" hidden>
+          <p class="muted">First time here? Enter your details below.</p>
+        </div>
+
+        <form id="details-form" class="form" novalidate>
+          <div class="form__row">
+            <label>First name <input name="firstName" autocomplete="given-name" required /></label>
+            <label>Last name <input name="lastName" autocomplete="family-name" required /></label>
+          </div>
+          <div class="form__row">
+            <label>Email <input name="email" type="email" autocomplete="email" required /></label>
+            <label>Phone <input name="phone" type="tel" autocomplete="tel" /></label>
+          </div>
+          <div id="new-patient-fields" class="new-fields" hidden>
+            <label>Address <input name="address" autocomplete="street-address" /></label>
+            <div class="form__row">
+              <label>Suburb <input name="city" autocomplete="address-level2" /></label>
+              <label>State <input name="state" autocomplete="address-level1" /></label>
+              <label>Postcode <input name="postcode" autocomplete="postal-code" inputmode="numeric" /></label>
+            </div>
+          </div>
+          <label>Notes (optional) <textarea name="notes" rows="2"></textarea></label>
+          <div class="actions">
+            <button class="link-btn" data-back="slot" type="button">← Back</button>
+            <button id="submit-btn" class="btn" type="submit">Review &amp; confirm</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Step 4: result -->
+      <section id="step-result" class="step" hidden>
+        <div id="result-card" class="result-card"></div>
+        <button id="restart-btn" class="btn btn--ghost" type="button">Book another</button>
+      </section>
+
+      <p id="error-bar" class="error-bar" role="alert" hidden></p>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

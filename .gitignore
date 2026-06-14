@@ -1,0 +1,31 @@
+# ── Secrets & environment ───────────────────────────────────────────
+# .env holds per-clinic Acuity / Cellcast / admin credentials. NEVER commit it.
+.env
+.env.local
+.env.*.local
+
+# ── Dependencies ────────────────────────────────────────────────────
+node_modules/
+
+# ── SQLite database (per-instance data, never in git) ───────────────
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+data/*.db
+
+# ── Logs ────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+
+# ── SSL certs / keys (provisioned per-instance) ─────────────────────
+*.pem
+*.key
+*.crt
+certs/
+
+# ── OS / editor cruft ───────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

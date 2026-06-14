@@ -1,0 +1,6 @@
+# Normalise line endings: store everything as LF in the repo so the same code
+# checked out on Linux (Lightsail) behaves identically. Critically, setup.sh and
+# other shell scripts MUST be LF or bash fails on Linux ("\r" errors).
+* text=auto eol=lf
+*.sh text eol=lf
+*.{cmd,bat} text eol=crlf
