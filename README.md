@@ -19,11 +19,13 @@ Internet  →  Lightsail (Gateway)  →  authenticated channel  →  Local Acuit
              /admin dashboard (later pass)
 ```
 
-> **Status:** MVP core — Express + SQLite, the booking/resilience engine, the
-> patient portal, and a local **mock Acuity** so it runs with no live
-> credentials. Admin dashboard, Cellcast SMS, the reconciliation UI, the nightly
-> purge job, and full `setup.sh` (systemd + SSL) are scheduled follow-up passes.
-> The database schema already supports all of them.
+> **Status:** Feature-complete for v1 — Express + `node:sqlite`, the
+> booking/resilience engine, the patient portal, a password-gated **admin
+> dashboard** (metrics + reconciliation report), **Cellcast SMS** (confirmation
+> send + inbound/DLR webhook), the nightly **retention purge job**, and a
+> deterministic **`setup.sh`** that provisions a Lightsail box end to end
+> (swap, Node, systemd service, nginx + SSL). A local **mock Acuity** lets the
+> whole thing run with no live credentials.
 
 ---
 
@@ -60,8 +62,8 @@ The mock seeds two existing patients for the lookup flow: phone `0412345678`
   slots (grows freely). `pending_bookings` holds patient PII with **minimal
   residency** — purged once `synced == true AND the appointment date has passed`
   (with a 1-week backstop). Age alone never purges; un-synced bookings are the
-  outage queue and are exempt. *(Purge job lands in a later pass; the schema and
-  indexes are in place.)*
+  outage queue and are exempt. The nightly purge job (`src/services/purge.js`)
+  enforces this and logs what it removed to the audit trail.
 - **Availability** is served from the cache (resilient) and refreshed on a timer
   and on webhooks, with a **live re-check against Acuity at booking time** to
   avoid double-booking.
@@ -74,6 +76,15 @@ The mock seeds two existing patients for the lookup flow: phone `0412345678`
 - **Security** (`src/middleware/security.js`): CSP `frame-ancestors` locked to
   the clinic origin, CORS locked to the same, short-lived **Bearer tokens**
   (not cookies) for the sensitive endpoints, PII only ever in request bodies.
+- **Admin** (`/admin`, `src/routes/admin.js`): password gate (+ optional IP
+  allow-list) with httpOnly session cookie and audit-logged access. Shows live
+  metrics — Acuity health, queue depth, sync lag, failed bookings, SMS failures,
+  error counts — plus the **reconciliation report** (resolve collisions by hand)
+  and the outage queue. Manual "replay queue" / "run purge" triggers included.
+- **SMS** (`src/sms/cellcast.js`, `src/services/sms.js`): sends a Cellcast
+  confirmation on booking (best-effort, never blocks), with an inbound webhook
+  (`/webhooks/cellcast`) for replies + delivery receipts. No-ops cleanly when no
+  Cellcast key is configured.
 
 See [`docs/INTEGRATION_NOTES.md`](docs/INTEGRATION_NOTES.md) for the verified
 Acuity / Cellcast / security contracts behind the implementation.
@@ -104,34 +115,62 @@ src/
   acuity/
     client.js            Acuity REST client (outage-aware)
     mock-server.js       local stand-in for Acuity (npm run mock)
+  sms/
+    cellcast.js          Cellcast SMS client (v1 gateway) + AU number normalise
   services/
     availability.js      cache + refresh + live verify
     patients.js          existing-patient lookup (PII passthrough, not stored)
     booking.js           booking flow + outage queue (resilience core)
     sync.js              queue replay, reconnect, reconciliation, webhooks
+    sms.js               SMS orchestration + sms_log
+    purge.js             nightly retention purge (APP 11)
+    metrics.js           admin dashboard metrics
     status.js            Acuity online/offline state
   middleware/
     security.js          helmet/CSP, CORS, rate limits, session gate
+    admin.js             admin IP allow-list + password + cookie session
     audit.js             audit-log writer
   routes/
     portal.js            public booking API
-    webhooks.js          Acuity → Gateway webhook receiver (signature-verified)
+    admin.js             /admin dashboard + gated metrics/ops APIs
+    webhooks.js          Acuity + Cellcast webhook receivers (verified)
   lib/
-    token.js             signed short-lived session tokens
+    token.js             signed short-lived session / admin tokens
     logger.js            structured logging
 public/                  the iframe booking portal (vanilla HTML/CSS/JS)
+admin/                   the admin dashboard (vanilla HTML/CSS/JS)
+deploy/                  systemd unit + nginx site (reference)
 data/                    SQLite files live here (git-ignored)
-setup.sh                 deterministic installer (MVP: deps + DB)
+setup.sh                 deterministic installer (swap, Node, service, SSL)
 ```
 
 ---
 
-## Deployment (target)
+## Deployment to AWS Lightsail
 
-One repo, many deployments — each Lightsail instance pulls the same versioned
-code and is differentiated only by `.env`. Tag known-good releases (`v1.0`, …)
-and stage rollouts. The deterministic `setup.sh` (not an agent) provisions an
-instance; systemd service registration and SSL provisioning are the next pass.
+One repo, many deployments — each instance pulls the same versioned code and is
+differentiated only by `.env`. Tag known-good releases (`v1.0`, …) and stage
+rollouts. The deterministic [`setup.sh`](setup.sh) (not an agent) provisions a
+fresh box end to end:
+
+```bash
+git clone https://github.com/eche028-code/Acuity-Gateway.git
+cd Acuity-Gateway
+cp .env.example .env     # fill in config, including DOMAIN + LETSENCRYPT_EMAIL
+./setup.sh               # swap, Node, deps, DB, systemd service, nginx + SSL
+```
+
+**Sized for the smallest Lightsail tier (1 GB RAM / 40 GB disk):** `setup.sh`
+creates a 2 GB swapfile (so `npm install` doesn't OOM), the systemd unit caps
+Node's heap (`--max-old-space-size=256`) with `MemoryHigh=700M` / `MemoryMax=850M`
+(reclaim into swap before any hard kill), and journald is capped at 500 MB.
+nginx terminates TLS and proxies to the Node port; the app trusts exactly one
+proxy hop. Manage it with `systemctl status acuity-gateway`
+and `journalctl -u acuity-gateway -f`.
+
+> **Claude Code's role is the mechanic, not the installer** (spec §5): `setup.sh`
+> is the deploy path; keep Claude Code around (or just SSH in) for debugging and
+> patching an instance in place.
 
 ## Regulatory
 

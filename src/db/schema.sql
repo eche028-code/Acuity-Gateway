@@ -94,6 +94,22 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_ts   ON audit_log (ts);
 CREATE INDEX IF NOT EXISTS idx_audit_type ON audit_log (event_type);
 
+-- ── SMS log (Cellcast send + inbound/DLR — spec #14/#16) ────────────
+-- Recipient phone is PII; the nightly purge job trims rows older than the
+-- configured SMS retention window.
+CREATE TABLE IF NOT EXISTS sms_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  direction   TEXT NOT NULL,   -- outbound | inbound | dlr
+  recipient   TEXT,            -- destination (outbound) or sender (inbound)
+  status      TEXT,            -- queued | sent | delivered | failed | received | skipped
+  provider_id TEXT,            -- Cellcast message id, for correlation
+  booking_id  TEXT,            -- optional link to pending_bookings.id
+  error       TEXT,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sms_status  ON sms_log (status);
+CREATE INDEX IF NOT EXISTS idx_sms_created ON sms_log (created_at);
+
 -- ── System state (key/value: connection health, sync cursors) ───────
 CREATE TABLE IF NOT EXISTS system_state (
   key        TEXT PRIMARY KEY,

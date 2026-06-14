@@ -13,6 +13,7 @@ import { config } from '../config.js';
 import { acuity, AcuityError } from '../acuity/client.js';
 import { setAcuityStatus, getAcuityStatus } from './status.js';
 import { refreshAvailability, openSlot } from './availability.js';
+import { sendBookingConfirmation } from './sms.js';
 import { recordAudit } from '../middleware/audit.js';
 import { logger } from '../lib/logger.js';
 
@@ -65,6 +66,9 @@ export async function processQueue() {
         markSynced.run({ acuity_id: appt.id, now, id: b.id });
         setAcuityStatus(true);
         pushed++;
+        // A booking made during the outage only got the "we'll confirm shortly"
+        // SMS — now that it's actually synced, send the confirmation.
+        sendBookingConfirmation(b, 'confirmed').catch(() => {});
       } catch (err) {
         if (err instanceof AcuityError && err.unreachable) {
           // Acuity dropped again mid-replay — stop, keep the rest queued.
@@ -119,8 +123,8 @@ export async function checkHealth() {
 }
 
 // Acuity → Gateway. Webhook payloads carry only ids, so we re-sync rather than
-// trust the (absent) body. A refresh is the simplest correct reaction; on a
-// cancellation we also re-open the slot immediately.
+// trust the (absent) body. A full availability refresh is the simplest correct
+// reaction — it reflects new bookings, reschedules, and cancellations alike.
 export async function handleAcuityWebhook({ action, id, appointmentTypeID }) {
   recordAudit({ event_type: 'webhook', actor: 'acuity', success: true, detail: { action, id } });
   try {

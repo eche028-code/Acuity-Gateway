@@ -1,0 +1,30 @@
+# Reference systemd unit for Acuity Gateway.
+#
+# setup.sh GENERATES this file with the correct User / WorkingDirectory / node
+# path for your instance, so you normally don't edit this by hand. It's kept
+# here as documentation and for manual installs. Tuned for the 1 GB Lightsail box.
+[Unit]
+Description=Acuity Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Acuity-Gateway
+Environment=NODE_ENV=production
+# .env in WorkingDirectory is loaded by the app (dotenv).
+# Cap V8 old-space heap — this is a 1 GB instance.
+ExecStart=/usr/bin/node --max-old-space-size=256 src/server.js
+Restart=always
+RestartSec=3
+# Soft limit first (reclaim/throttle into swap), hard ceiling second — so the
+# service degrades instead of getting SIGKILL'd into a restart loop on 1 GB.
+MemoryHigh=700M
+MemoryMax=850M
+# Hardening.
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

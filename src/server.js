@@ -17,9 +17,11 @@ import {
   globalRateLimit,
 } from './middleware/security.js';
 import { portal } from './routes/portal.js';
+import { admin } from './routes/admin.js';
 import { webhooks } from './routes/webhooks.js';
 import { refreshAvailability } from './services/availability.js';
 import { checkHealth, registerWebhook } from './services/sync.js';
+import { runPurgeIfDue } from './services/purge.js';
 
 migrate();
 
@@ -45,6 +47,9 @@ app.use(express.json({ limit: '100kb' }));
 
 // Booking API.
 app.use('/api', portal);
+
+// Admin dashboard (password-gated inside the router).
+app.use('/admin', admin);
 
 // Static booking portal (the iframe target).
 app.use(express.static(resolve(here, '../public')));
@@ -77,6 +82,10 @@ const server = app.listen(config.port, async () => {
     logger.warn({ err: err.message }, 'initial webhook registration failed');
   }
 
+  if (config.isProd && config.cellcast.enabled && !config.cellcast.webhookUser) {
+    logger.warn('Cellcast SMS enabled but inbound webhook is unauthenticated — set CELLCAST_WEBHOOK_USER/PASS');
+  }
+
   // Periodic jobs.
   setInterval(() => {
     refreshAvailability().catch((err) => logger.warn({ err: err.message }, 'refresh job failed'));
@@ -85,6 +94,17 @@ const server = app.listen(config.port, async () => {
   setInterval(() => {
     checkHealth().catch((err) => logger.warn({ err: err.message }, 'health job failed'));
   }, 30_000);
+
+  // Nightly retention purge (runs at most once/day at/after PURGE_HOUR). Check
+  // shortly after boot too, in case the box was down when it was due.
+  setTimeout(() => runPurgeIfDue(), 60_000);
+  setInterval(() => {
+    try {
+      runPurgeIfDue();
+    } catch (err) {
+      logger.warn({ err: err.message }, 'purge job failed');
+    }
+  }, 60 * 60 * 1000);
 });
 
 // Graceful shutdown.

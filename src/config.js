@@ -3,8 +3,12 @@
 // In production we fail fast on missing required vars; in development we are
 // lenient (so you can boot against the mock Acuity with an empty .env).
 import dotenv from 'dotenv';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-dotenv.config();
+// Load .env from the project root regardless of the process working directory,
+// so a systemd service (whose cwd may differ) still picks up the config.
+dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../.env') });
 
 const env = process.env.NODE_ENV || 'development';
 const isProd = env === 'production';
@@ -70,12 +74,21 @@ export const config = {
   admin: {
     password: need('ADMIN_PASSWORD'),
     ipAllowlist: list('ADMIN_IP_ALLOWLIST'),
+    sessionTtlMs: int('ADMIN_SESSION_TTL_MS', 8 * 60 * 60 * 1000),
   },
 
   cellcast: {
     apiKey: optional('CELLCAST_API_KEY', ''),
-    apiBase: optional('CELLCAST_API_BASE', 'https://cellcast.com.au/api/v3'),
+    // Default to the current-generation v1 base (Bearer auth, POST /api/v1/gateway).
+    apiBase: optional('CELLCAST_API_BASE', 'https://api.cellcast.com'),
     senderId: optional('CELLCAST_SENDER_ID', ''),
+    // Optional HTTP Basic Auth on the inbound webhook (set in the Cellcast dashboard).
+    webhookUser: optional('CELLCAST_WEBHOOK_USER', ''),
+    webhookPass: optional('CELLCAST_WEBHOOK_PASS', ''),
+    // Send a confirmation SMS on booking when a key is configured.
+    get enabled() {
+      return !!this.apiKey;
+    },
   },
 
   // Short-lived portal session tokens (token-based, not cookies — spec §7).
@@ -93,5 +106,16 @@ export const config = {
 
   retention: {
     backstopDays: int('PII_BACKSTOP_DAYS', 7),
+    // Nightly purge runs once per day at/after this local hour (0-23).
+    purgeHour: int('PURGE_HOUR', 3),
+    // SMS log rows older than this are trimmed by the purge job.
+    smsRetentionDays: int('SMS_RETENTION_DAYS', 30),
   },
 };
+
+// In production CLINIC_ORIGIN must be set — it drives both CORS and the iframe
+// framing allow-list. Without it we'd otherwise fall back to permissive framing
+// (clickjacking risk), so fail fast at startup instead.
+if (config.isProd && config.clinic.origins.length === 0) {
+  throw new Error('CLINIC_ORIGIN is required in production (drives CORS + iframe framing).');
+}

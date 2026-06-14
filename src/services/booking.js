@@ -17,6 +17,7 @@ import { verifySlotLive, closeSlot, openSlot } from './availability.js';
 import { setAcuityStatus } from './status.js';
 import { recordAudit } from '../middleware/audit.js';
 import { logger } from '../lib/logger.js';
+import { sendBookingConfirmation } from './sms.js';
 
 const insertBooking = db.prepare(`
   INSERT INTO pending_bookings (
@@ -48,6 +49,12 @@ const markAttempt = db.prepare(`
   SET sync_attempts = sync_attempts + 1, last_attempt_at = @now, sync_error = @err, updated_at = @now
   WHERE id = @id
 `);
+
+// Note an outage queue WITHOUT counting it as a sync attempt — we never reached
+// Acuity, so it isn't a failed attempt. Keeps the failed-sync metric honest.
+const noteQueued = db.prepare(
+  `UPDATE pending_bookings SET sync_error = @err, updated_at = @now WHERE id = @id`,
+);
 
 const deleteBooking = db.prepare(`DELETE FROM pending_bookings WHERE id = ?`);
 
@@ -106,9 +113,10 @@ export async function createBooking(input, ctx = {}) {
   // 4 / 5) push to Acuity (or queue if it's down)
   if (!live.reachable) {
     setAcuityStatus(false);
-    markAttempt.run({ now: new Date().toISOString(), err: 'acuity offline at booking', id: record.id });
+    noteQueued.run({ err: 'acuity offline at booking', now: new Date().toISOString(), id: record.id });
     recordAudit({ event_type: 'booking', actor: 'patient', ip: ctx.ip, success: true, detail: { id: record.id, state: 'queued', reason: 'acuity_offline' } });
     logger.info({ id: record.id }, 'booking queued - Acuity offline');
+    sendBookingConfirmation(record, 'queued').catch(() => {});
     return { ok: true, state: 'queued', bookingId: record.id };
   }
 
@@ -117,6 +125,7 @@ export async function createBooking(input, ctx = {}) {
     markSynced.run({ acuity_id: appt.id, now: new Date().toISOString(), id: record.id });
     setAcuityStatus(true);
     recordAudit({ event_type: 'booking', actor: 'patient', ip: ctx.ip, success: true, detail: { id: record.id, acuity_id: appt.id, state: 'confirmed' } });
+    sendBookingConfirmation(record, 'confirmed').catch(() => {});
     return { ok: true, state: 'confirmed', bookingId: record.id, acuityId: appt.id };
   } catch (err) {
     if (err instanceof AcuityError && err.unreachable) {
@@ -124,6 +133,7 @@ export async function createBooking(input, ctx = {}) {
       setAcuityStatus(false);
       markAttempt.run({ now: new Date().toISOString(), err: 'unreachable at push', id: record.id });
       recordAudit({ event_type: 'booking', actor: 'patient', ip: ctx.ip, success: true, detail: { id: record.id, state: 'queued', reason: 'acuity_unreachable' } });
+      sendBookingConfirmation(record, 'queued').catch(() => {});
       return { ok: true, state: 'queued', bookingId: record.id };
     }
     if (err instanceof AcuityError && err.status >= 400 && err.status < 500) {

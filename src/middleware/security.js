@@ -14,9 +14,14 @@ import { verifyToken } from '../lib/token.js';
 const origins = config.clinic.origins;
 
 export function helmetMiddleware() {
-  // In dev with no clinic origin set, allow framing from anywhere so you can
-  // test embedding locally; in prod the configured origins are required.
-  const frameAncestors = origins.length ? ["'self'", ...origins] : ["'self'", '*'];
+  // With clinic origins configured, allow only those to frame us. With none:
+  // deny third-party framing in prod (config also throws if unset), but allow
+  // '*' in dev so you can test embedding locally.
+  const frameAncestors = origins.length
+    ? ["'self'", ...origins]
+    : config.isProd
+      ? ["'self'"]
+      : ["'self'", '*'];
   return helmet({
     // Override ONLY frame-ancestors; keep helmet's other vetted CSP defaults
     // (default-src 'self', object-src 'none', HSTS, nosniff, etc.).
@@ -53,6 +58,11 @@ export function searchRateLimit() {
 
 export function bookingRateLimit() {
   return rateLimit({ windowMs: 60_000, limit: 6, standardHeaders: true, legacyHeaders: false });
+}
+
+export function adminLoginRateLimit() {
+  // Tight cap to blunt brute-forcing of the single admin password.
+  return rateLimit({ windowMs: 15 * 60_000, limit: 10, standardHeaders: true, legacyHeaders: false });
 }
 
 // Gate for the sensitive endpoints: requires a valid, unexpired session token.
