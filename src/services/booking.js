@@ -60,13 +60,22 @@ const deleteBooking = db.prepare(`DELETE FROM pending_bookings WHERE id = ?`);
 
 function acuityPayload(b) {
   return {
-    appointmentTypeID: b.appointment_type_id,
-    datetime: b.appointment_datetime, // pass the exact slot string Acuity returned
-    firstName: b.first_name,
-    lastName: b.last_name,
-    email: b.email,
-    phone: b.phone,
-    calendarID: b.calendar_id || undefined,
+    idempotencyKey: b.id, // Gateway booking id → dedupes replayed bookings
+    appointmentTypeId: b.appointment_type_id,
+    start: b.appointment_datetime, // pass the exact slot string Acuity returned
+    practitionerId: b.calendar_id || undefined,
+    patient: {
+      firstName: b.first_name,
+      lastName: b.last_name,
+      phone: b.phone || undefined,
+      email: b.email || undefined,
+      isNew: !!b.is_new_patient,
+      address: b.address || undefined,
+      suburb: b.city || undefined,
+      state: b.state || undefined,
+      postcode: b.postcode || undefined,
+      notes: b.notes || undefined,
+    },
   };
 }
 
@@ -75,7 +84,7 @@ export async function createBooking(input, ctx = {}) {
   const record = {
     id: crypto.randomUUID(),
     appointment_type_id: input.appointmentTypeId,
-    calendar_id: input.calendarId || 0,
+    calendar_id: input.calendarId || '',
     appointment_datetime: input.datetime,
     appointment_date: String(input.datetime).slice(0, 10),
     first_name: input.firstName,
@@ -100,7 +109,6 @@ export async function createBooking(input, ctx = {}) {
   const live = await verifySlotLive({
     appointmentTypeId: record.appointment_type_id,
     datetime: record.appointment_datetime,
-    calendarId: record.calendar_id || undefined,
   });
   if (live.reachable && !live.open) {
     return { ok: false, code: 'slot_taken', message: 'That time is no longer available. Please choose another.' };
@@ -122,11 +130,11 @@ export async function createBooking(input, ctx = {}) {
 
   try {
     const appt = await acuity.createAppointment(acuityPayload(record));
-    markSynced.run({ acuity_id: appt.id, now: new Date().toISOString(), id: record.id });
+    markSynced.run({ acuity_id: appt.appointmentId, now: new Date().toISOString(), id: record.id });
     setAcuityStatus(true);
-    recordAudit({ event_type: 'booking', actor: 'patient', ip: ctx.ip, success: true, detail: { id: record.id, acuity_id: appt.id, state: 'confirmed' } });
+    recordAudit({ event_type: 'booking', actor: 'patient', ip: ctx.ip, success: true, detail: { id: record.id, acuity_id: appt.appointmentId, state: 'confirmed' } });
     sendBookingConfirmation(record, 'confirmed').catch(() => {});
-    return { ok: true, state: 'confirmed', bookingId: record.id, acuityId: appt.id };
+    return { ok: true, state: 'confirmed', bookingId: record.id, acuityId: appt.appointmentId };
   } catch (err) {
     if (err instanceof AcuityError && err.unreachable) {
       // Acuity went down between verify and push → keep it queued, still confirm.

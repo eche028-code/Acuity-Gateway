@@ -1,18 +1,17 @@
 // Sync & resilience (spec #4–#7).
 //
-//   • processQueue()  — replay outage-queued bookings up to Acuity.
-//   • checkHealth()   — ping Acuity; on the offline→online edge, replay the
-//                       queue and reconcile (this is the reconnect pass).
-//   • handleAcuityWebhook() — react to Acuity-side changes pushed to Gateway.
-//   • registerWebhook()     — subscribe Gateway's callback with Acuity.
+//   • processQueue() — replay outage-queued bookings to Acuity (idempotent).
+//   • checkHealth()  — ping Acuity; on the offline→online edge, replay + reconcile.
+//   • pollChanges()  — pull Acuity-side changes (front-desk bookings, reschedules,
+//                      cancellations) via the /changes cursor and refresh the cache.
 //
-// Reconciliation surfaces collisions for a HUMAN in /admin (spec #7); it never
-// silently overwrites either side.
-import { db } from '../db/index.js';
-import { config } from '../config.js';
+// Acuity is reached over Tailscale and does NOT push webhooks to us, so the
+// Gateway→Acuity sync is poll-based. Reconciliation surfaces collisions for a
+// human in /admin (spec #7) — never a silent overwrite.
+import { db, getState, setState } from '../db/index.js';
 import { acuity, AcuityError } from '../acuity/client.js';
 import { setAcuityStatus, getAcuityStatus } from './status.js';
-import { refreshAvailability, openSlot } from './availability.js';
+import { refreshAvailability } from './availability.js';
 import { sendBookingConfirmation } from './sms.js';
 import { recordAudit } from '../middleware/audit.js';
 import { logger } from '../lib/logger.js';
@@ -41,8 +40,30 @@ const flagReconciliation = db.prepare(`
   VALUES (@kind, @pending_booking_id, @slot_datetime, @detail, 'open', @created_at)
 `);
 
-let processing = false;
+// Build the Acuity create payload from a pending_bookings row. The Gateway's own
+// booking id is the idempotencyKey so a replayed booking never duplicates.
+export function acuityPayload(b) {
+  return {
+    idempotencyKey: b.id,
+    appointmentTypeId: b.appointment_type_id,
+    start: b.appointment_datetime,
+    practitionerId: b.calendar_id || undefined,
+    patient: {
+      firstName: b.first_name,
+      lastName: b.last_name,
+      phone: b.phone || undefined,
+      email: b.email || undefined,
+      isNew: !!b.is_new_patient,
+      address: b.address || undefined,
+      suburb: b.city || undefined,
+      state: b.state || undefined,
+      postcode: b.postcode || undefined,
+      notes: b.notes || undefined,
+    },
+  };
+}
 
+let processing = false;
 export async function processQueue() {
   if (processing) return { skipped: true };
   processing = true;
@@ -50,35 +71,25 @@ export async function processQueue() {
   let conflicts = 0;
   let stillDown = false;
   try {
-    const rows = pendingQueue.all();
-    for (const b of rows) {
+    for (const b of pendingQueue.all()) {
       const now = new Date().toISOString();
       try {
-        const appt = await acuity.createAppointment({
-          appointmentTypeID: b.appointment_type_id,
-          datetime: b.appointment_datetime,
-          firstName: b.first_name,
-          lastName: b.last_name,
-          email: b.email,
-          phone: b.phone,
-          calendarID: b.calendar_id || undefined,
-        });
-        markSynced.run({ acuity_id: appt.id, now, id: b.id });
+        const appt = await acuity.createAppointment(acuityPayload(b));
+        markSynced.run({ acuity_id: appt.appointmentId, now, id: b.id });
         setAcuityStatus(true);
         pushed++;
-        // A booking made during the outage only got the "we'll confirm shortly"
-        // SMS — now that it's actually synced, send the confirmation.
+        // Queued during the outage → it only got the "we'll confirm shortly"
+        // SMS; now that it's synced, send the confirmation.
         sendBookingConfirmation(b, 'confirmed').catch(() => {});
       } catch (err) {
         if (err instanceof AcuityError && err.unreachable) {
-          // Acuity dropped again mid-replay — stop, keep the rest queued.
           setAcuityStatus(false);
           stillDown = true;
           break;
         }
-        if (err instanceof AcuityError && err.status >= 400 && err.status < 500) {
-          // Slot collision: Acuity already has something here (the rare
-          // last-second write before a crash). Surface it for a human (#7).
+        if (err instanceof AcuityError && err.status === 409) {
+          // Slot collision (a write landed in Acuity that we didn't know about)
+          // → surface for a human (#7), don't overwrite.
           markAttempt.run({ now, err: `reconcile: ${err.message}`, id: b.id });
           flagReconciliation.run({
             kind: 'collision',
@@ -110,7 +121,7 @@ export async function checkHealth() {
     await acuity.ping();
     setAcuityStatus(true);
     if (was !== 'online') {
-      logger.info('Acuity reconnected - replaying queue and reconciling');
+      logger.info('Acuity reachable - replaying queue and reconciling');
       const result = await processQueue();
       await refreshAvailability();
       recordAudit({ event_type: 'sync', actor: 'system', success: true, detail: { event: 'reconnect', ...result } });
@@ -122,35 +133,39 @@ export async function checkHealth() {
   }
 }
 
-// Acuity → Gateway. Webhook payloads carry only ids, so we re-sync rather than
-// trust the (absent) body. A full availability refresh is the simplest correct
-// reaction — it reflects new bookings, reschedules, and cancellations alike.
-export async function handleAcuityWebhook({ action, id, appointmentTypeID }) {
-  recordAudit({ event_type: 'webhook', actor: 'acuity', success: true, detail: { action, id } });
+// Poll Acuity for changes it made on its side (front-desk bookings, reschedules,
+// cancellations) and keep the availability cache fresh. Skips our own echoes
+// (source === 'gateway'). The cursor is opaque and never redelivers a row.
+let polling = false;
+export async function pollChanges() {
+  if (polling) return;
+  polling = true;
   try {
-    await refreshAvailability();
-  } catch (err) {
-    logger.warn({ err: err.message }, 'webhook-triggered refresh failed');
-  }
-  return true;
-}
-
-export async function registerWebhook() {
-  const target = `${config.publicBaseUrl}/webhooks/acuity`;
-  const events = ['appointment.scheduled', 'appointment.rescheduled', 'appointment.canceled'];
-  for (const event of events) {
+    const since = getState('changes_cursor') || '';
+    let resp;
     try {
-      await acuity.subscribeWebhook({ target, event });
+      resp = await acuity.getChanges({ since });
     } catch (err) {
-      if (err instanceof AcuityError && err.unreachable) return false; // try again later
-      logger.warn({ err: err.message, event }, 'webhook subscription failed');
+      if (err instanceof AcuityError && err.unreachable) {
+        setAcuityStatus(false);
+        return;
+      }
+      throw err;
     }
+    setAcuityStatus(true);
+    const changes = (resp && resp.changes) || [];
+    const external = changes.filter((c) => c.source !== 'gateway');
+    if (external.length > 0) {
+      logger.info({ changes: external.length }, 'external Acuity changes - refreshing availability');
+      await refreshAvailability();
+    }
+    if (resp && resp.cursor) setState('changes_cursor', resp.cursor);
+  } finally {
+    polling = false;
   }
-  logger.info({ target }, 'webhooks registered with Acuity');
-  return true;
 }
 
-// ── Metrics (for the public status endpoint and the future /admin) ──
+// ── Metrics ─────────────────────────────────────────────────────────
 const countUnsynced = db.prepare(
   `SELECT COUNT(*) AS n FROM pending_bookings WHERE synced = 0 AND status != 'cancelled'`,
 );

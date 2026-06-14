@@ -30,7 +30,7 @@ portal.get('/appointment-types', (_req, res) => {
 });
 
 portal.get('/availability/dates', (req, res) => {
-  const appointmentTypeId = Number(req.query.appointmentTypeId);
+  const appointmentTypeId = (req.query.appointmentTypeId || '').toString();
   if (!appointmentTypeId) return res.status(400).json({ error: 'appointmentTypeId is required' });
   const today = new Date();
   const from = req.query.from || today.toISOString().slice(0, 10);
@@ -41,7 +41,7 @@ portal.get('/availability/dates', (req, res) => {
 });
 
 portal.get('/availability/times', (req, res) => {
-  const appointmentTypeId = Number(req.query.appointmentTypeId);
+  const appointmentTypeId = (req.query.appointmentTypeId || '').toString();
   const date = req.query.date;
   if (!appointmentTypeId || !date) {
     return res.status(400).json({ error: 'appointmentTypeId and date are required' });
@@ -75,7 +75,7 @@ portal.post('/bookings', requireSession, bookingRateLimit(), async (req, res, ne
     // Validation. email is required for non-admin Acuity bookings (confirmed
     // against the Acuity API), alongside a name and a slot.
     const errors = [];
-    if (!Number(b.appointmentTypeId)) errors.push('appointmentTypeId');
+    if (!b.appointmentTypeId) errors.push('appointmentTypeId');
     if (!b.datetime) errors.push('datetime');
     if (!b.firstName) errors.push('firstName');
     if (!b.lastName) errors.push('lastName');
@@ -86,8 +86,8 @@ portal.post('/bookings', requireSession, bookingRateLimit(), async (req, res, ne
 
     const result = await createBooking(
       {
-        appointmentTypeId: Number(b.appointmentTypeId),
-        calendarId: b.calendarId ? Number(b.calendarId) : 0,
+        appointmentTypeId: String(b.appointmentTypeId),
+        calendarId: b.calendarId ? String(b.calendarId) : '',
         datetime: b.datetime,
         firstName: b.firstName,
         lastName: b.lastName,

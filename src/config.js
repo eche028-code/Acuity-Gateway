@@ -52,6 +52,12 @@ function list(name, fallback = []) {
     .filter(Boolean);
 }
 
+function bool(name, fallback) {
+  const v = process.env[name];
+  if (v === undefined || v === '') return fallback;
+  return /^(1|true|yes|on)$/i.test(v.trim());
+}
+
 export const config = {
   env,
   isProd,
@@ -59,10 +65,12 @@ export const config = {
   publicBaseUrl: optional('PUBLIC_BASE_URL', `http://localhost:${int('PORT', 3000)}`),
 
   acuity: {
-    userId: need('ACUITY_USER_ID'),
+    // Bearer key for the local Acuity Gateway API (Acuity → System Admin → Gateway).
     apiKey: need('ACUITY_API_KEY'),
-    apiBase: optional('ACUITY_API_BASE', 'http://localhost:4000'),
-    webhookSecret: optional('ACUITY_WEBHOOK_SECRET', ''),
+    // Host root of the Acuity API; the client appends /api/gateway/v1.
+    apiBase: optional('ACUITY_API_BASE', 'https://localhost:3002'),
+    // Skip TLS verification — only for a self-signed cert (localhost / raw Tailscale IP).
+    tlsInsecure: bool('ACUITY_TLS_INSECURE', false),
   },
 
   clinic: {

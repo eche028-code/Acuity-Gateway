@@ -1,17 +1,17 @@
 // Availability: cache + periodic refresh, with a live re-check at booking time.
 //
-// Strategy (the parked open item, decided): the portal renders slots from the
-// local SQLite cache (so it keeps working during an Acuity outage), the cache
-// is refreshed on a timer and on webhooks, and the booking flow does a LIVE
-// availability check against Acuity at the moment of booking to avoid double-
-// booking. Best of both: resilient to render, authoritative to commit.
+// Slots come from Acuity's `GET /availability` (one call per appointment type
+// across the rolling window, ≤62 days per the contract's range cap). The portal
+// renders from this cache (so it survives an Acuity outage); the booking flow
+// re-checks the exact slot live against Acuity before committing.
 import { db, getState, setState } from '../db/index.js';
 import { config } from '../config.js';
 import { acuity, AcuityError } from '../acuity/client.js';
 import { setAcuityStatus } from './status.js';
 import { logger } from '../lib/logger.js';
 
-// ── Prepared statements ─────────────────────────────────────────────
+const MAX_RANGE_DAYS = 62; // Acuity's availability range cap
+
 const upsertSlot = db.prepare(`
   INSERT INTO availability_cache
     (appointment_type_id, calendar_id, slot_datetime, slot_date, duration_minutes, is_available, source, last_refreshed_at)
@@ -23,15 +23,10 @@ const upsertSlot = db.prepare(`
     last_refreshed_at = excluded.last_refreshed_at
 `);
 
-// Before a refresh, tentatively mark all future Acuity slots unavailable; the
-// upsert re-opens the ones Acuity still returns. Slots that vanished (booked
-// elsewhere) thus correctly flip to unavailable.
 const tentativeCloseFuture = db.prepare(
   `UPDATE availability_cache SET is_available = 0 WHERE source = 'acuity' AND slot_date >= @today`,
 );
 
-// Re-close any slot held by a local active booking (e.g. an outage-queued
-// booking Acuity doesn't know about yet), so a refresh can't re-open it.
 const reapplyLocalHolds = db.prepare(`
   UPDATE availability_cache SET is_available = 0
   WHERE EXISTS (
@@ -62,21 +57,13 @@ const selectOpenTimes = db.prepare(`
   ORDER BY slot_datetime
 `);
 
-// ── Helpers ─────────────────────────────────────────────────────────
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
-
-// Distinct YYYY-MM strings spanning [today, today + windowDays].
-function monthsInWindow() {
-  const months = new Set();
-  const start = new Date();
-  for (let i = 0; i <= config.availability.windowDays; i++) {
-    const d = new Date(start);
-    d.setDate(d.getDate() + i);
-    months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-  }
-  return [...months];
+function addDaysStr(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 export function closeSlot(appointmentTypeId, datetime) {
@@ -90,92 +77,64 @@ export function getAppointmentTypes() {
   const raw = getState('appointment_types');
   return raw ? JSON.parse(raw) : [];
 }
-
 export function getOpenDates(appointmentTypeId, from, to) {
   return selectOpenDates.all(appointmentTypeId, from, to).map((r) => r.slot_date);
 }
-
 export function getOpenTimes(appointmentTypeId, date) {
   return selectOpenTimes.all(appointmentTypeId, date);
 }
 
-// ── Refresh ─────────────────────────────────────────────────────────
 let refreshing = false;
 
 export async function refreshAvailability() {
   if (refreshing) return { skipped: true };
   refreshing = true;
   const today = todayStr();
+  const to = addDaysStr(Math.min(config.availability.windowDays, MAX_RANGE_DAYS));
   const ts = new Date().toISOString();
   try {
-    let types;
+    let typesResp;
     try {
-      types = await acuity.listAppointmentTypes();
+      typesResp = await acuity.listAppointmentTypes();
     } catch (err) {
       if (err instanceof AcuityError && err.unreachable) {
         setAcuityStatus(false);
-        logger.warn('availability refresh skipped — Acuity unreachable (serving cache)');
+        logger.warn('availability refresh skipped — Acuity not reachable (serving cache)');
         return { refreshed: false, reason: 'unreachable' };
       }
       throw err;
     }
 
-    // Cache appointment types (non-PII) for the portal.
-    const slimTypes = (Array.isArray(types) ? types : []).map((t) => ({
-      id: t.id,
-      name: t.name,
-      duration: t.duration,
-      calendarID: (t.calendarIDs && t.calendarIDs[0]) || null,
-    }));
+    const types = (typesResp && typesResp.appointmentTypes) || [];
+    const slimTypes = types
+      .filter((t) => t.active !== false)
+      .map((t) => ({ id: t.id, name: t.name, duration: t.durationMinutes ?? t.duration ?? null }));
     setState('appointment_types', JSON.stringify(slimTypes));
 
-    let count = 0;
     tentativeCloseFuture.run({ today });
 
+    let count = 0;
     for (const type of slimTypes) {
-      const calendarId = type.calendarID || 0;
-      for (const month of monthsInWindow()) {
-        let dates;
-        try {
-          dates = await acuity.getAvailabilityDates({
-            month,
-            appointmentTypeID: type.id,
-            calendarID: type.calendarID || undefined,
-          });
-        } catch (err) {
-          if (err instanceof AcuityError && err.unreachable) {
-            setAcuityStatus(false);
-            return { refreshed: false, reason: 'unreachable', count };
-          }
-          continue; // skip this month on a transient error
+      let avail;
+      try {
+        avail = await acuity.getAvailability({ appointmentTypeId: type.id, from: today, to });
+      } catch (err) {
+        if (err instanceof AcuityError && err.unreachable) {
+          setAcuityStatus(false);
+          return { refreshed: false, reason: 'unreachable', count };
         }
-        for (const d of dates || []) {
-          let times;
-          try {
-            times = await acuity.getAvailabilityTimes({
-              date: d.date,
-              appointmentTypeID: type.id,
-              calendarID: type.calendarID || undefined,
-            });
-          } catch (err) {
-            if (err instanceof AcuityError && err.unreachable) {
-              setAcuityStatus(false);
-              return { refreshed: false, reason: 'unreachable', count };
-            }
-            continue;
-          }
-          for (const t of times || []) {
-            upsertSlot.run({
-              appointment_type_id: type.id,
-              calendar_id: calendarId,
-              slot_datetime: t.time,
-              slot_date: t.time.slice(0, 10),
-              duration_minutes: type.duration || null,
-              ts,
-            });
-            count++;
-          }
-        }
+        continue; // transient error for this type — skip it
+      }
+      for (const slot of avail.slots || []) {
+        upsertSlot.run({
+          appointment_type_id: type.id,
+          calendar_id: slot.practitionerId || '',
+          slot_datetime: slot.start,
+          slot_date: String(slot.start).slice(0, 10),
+          duration_minutes: slot.durationMinutes ?? type.duration ?? null,
+          ts,
+        });
+        count++;
       }
     }
 
@@ -190,16 +149,12 @@ export async function refreshAvailability() {
   }
 }
 
-// ── Live verify (called at booking time) ────────────────────────────
-export async function verifySlotLive({ appointmentTypeId, datetime, calendarId }) {
+export async function verifySlotLive({ appointmentTypeId, datetime }) {
   try {
-    const times = await acuity.getAvailabilityTimes({
-      date: String(datetime).slice(0, 10),
-      appointmentTypeID: appointmentTypeId,
-      calendarID: calendarId || undefined,
-    });
+    const date = String(datetime).slice(0, 10);
+    const avail = await acuity.getAvailability({ appointmentTypeId, from: date, to: date });
     setAcuityStatus(true);
-    const open = (times || []).some((t) => t.time === datetime);
+    const open = (avail.slots || []).some((s) => s.start === datetime);
     return { reachable: true, open };
   } catch (err) {
     if (err instanceof AcuityError && err.unreachable) {
