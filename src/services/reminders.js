@@ -10,6 +10,7 @@
 import { db, getState, setState } from '../db/index.js';
 import { config } from '../config.js';
 import { dispatchSms, formatWhen } from './sms.js';
+import { smsEnabled } from './settings.js';
 import { recordAudit } from '../middleware/audit.js';
 import { logger } from '../lib/logger.js';
 
@@ -37,7 +38,7 @@ function localDate(days = 0) {
 }
 
 export async function runReminders(trigger = 'scheduled') {
-  if (!config.cellcast.enabled || !config.reminders.enabled) {
+  if (!smsEnabled() || !config.reminders.enabled) {
     return { skipped: 'disabled', due: 0, sent: 0 };
   }
   const target = localDate(1); // tomorrow
@@ -62,7 +63,7 @@ export async function runReminders(trigger = 'scheduled') {
 
 // Called hourly. Runs at most once per day, at/after the configured hour.
 export function runRemindersIfDue() {
-  if (!config.cellcast.enabled || !config.reminders.enabled) return;
+  if (!smsEnabled() || !config.reminders.enabled) return;
   const now = new Date();
   if (now.getHours() < config.reminders.hour) return;
   const today = now.toISOString().slice(0, 10);

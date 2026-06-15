@@ -14,6 +14,7 @@ import { recordAudit } from '../middleware/audit.js';
 import { logger } from '../lib/logger.js';
 import { parseIntent } from './sms-intent.js';
 import { pickBooking } from './sms-match.js';
+import { smsEnabled } from './settings.js';
 
 const insertSms = db.prepare(`
   INSERT INTO sms_log (direction, recipient, status, provider_id, booking_id, body,
@@ -76,7 +77,7 @@ export function removeSuppression(number) {
 // then logs the outcome. `kind` ∈ confirmation | reminder | staff. Returns the
 // raw sendSms result ({ ok } | { skipped, reason } | { error }).
 export async function dispatchSms({ to, message, kind = 'staff', bookingId = null }) {
-  if (!config.cellcast.enabled) {
+  if (!smsEnabled()) {
     logSms({ direction: 'outbound', recipient: to, status: 'skipped', booking_id: bookingId, body: message, error: 'sms_disabled' });
     return { ok: false, skipped: true, reason: 'sms_disabled' };
   }

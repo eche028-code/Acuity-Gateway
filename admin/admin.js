@@ -369,5 +369,66 @@ $('#sms-suppress-btn').addEventListener('click', async () => {
   } catch { /* */ }
 });
 
+// ── Integrations (Cellcast key/sender + Acuity access key) ──────────
+async function loadSettings() {
+  try {
+    const s = await api('/settings');
+    const c = s.cellcast, ib = s.inbound;
+    $('#int-cellcast-status').textContent = c.configured
+      ? `SMS ${c.smsEnabled ? 'ENABLED' : 'off'} · key …${c.last4} (${c.source}) · sender ${c.sender || 'shared number'}`
+      : 'No Cellcast key set — SMS is disabled.';
+    $('#int-cellcast-sender').value = c.sender || '';
+    $('#int-inbound-status').textContent = ib.configured
+      ? `Key set …${ib.last4} (${ib.source}) — Acuity uses this as its Bearer token.`
+      : 'No inbound key set — the Acuity → Gateway endpoint is disabled.';
+  } catch { /* not authed */ }
+}
+
+$('#int-btn').addEventListener('click', () => {
+  const p = $('#int-panel');
+  p.hidden = !p.hidden;
+  if (!p.hidden) loadSettings();
+});
+
+$('#int-cellcast-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('#int-cellcast-msg');
+  const show = (t, ok) => { msg.textContent = t; msg.className = ok ? 'ok-text' : 'error'; msg.hidden = false; };
+  const body = { senderId: $('#int-cellcast-sender').value.trim() };
+  const key = $('#int-cellcast-key').value.trim();
+  if (key) body.apiKey = key; // blank = keep current key
+  try {
+    await api('/settings/cellcast', { method: 'POST', body });
+    $('#int-cellcast-key').value = '';
+    show('Saved.', true);
+    loadSettings();
+  } catch { show('Could not save.', false); }
+});
+
+$('#int-test-btn').addEventListener('click', async () => {
+  const out = $('#int-test-msg');
+  const to = $('#int-test-to').value.trim();
+  if (!to) { out.textContent = 'Enter a number.'; return; }
+  out.textContent = 'Sending…';
+  try {
+    const r = await api('/settings/test-sms', { method: 'POST', body: { to } });
+    out.textContent = `Sent ✓ (${r.providerId || 'queued'})`;
+  } catch (err) {
+    out.textContent = err.status === 409 ? 'Blocked (opted out or SMS disabled).'
+      : err.status === 400 ? 'Invalid number.' : 'Send failed.';
+  }
+});
+
+$('#int-genkey-btn').addEventListener('click', async () => {
+  if (!confirm('Generate a new Acuity access key? The current key stops working immediately — Acuity must be updated with the new one.')) return;
+  try {
+    const r = await api('/settings/inbound-key/generate', { method: 'POST' });
+    $('#int-genkey-value').value = r.key;
+    $('#int-genkey-reveal').hidden = false;
+    loadSettings();
+  } catch { /* */ }
+});
+$('#int-genkey-value').addEventListener('focus', (e) => e.target.select());
+
 // Decide initial view by probing a gated endpoint.
 api('/metrics').then(showDash).catch(showLogin);

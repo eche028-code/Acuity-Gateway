@@ -10,15 +10,15 @@
 //     interface (nginx allow/deny or a firewall rule), not the public domain.
 import express from 'express';
 import crypto from 'node:crypto';
-import { config } from '../config.js';
 import { dispatchSms } from '../services/sms.js';
 import { normalizeAuNumber } from '../sms/cellcast.js';
+import { inboundApiKey, smsEnabled, cellcastSenderId } from '../services/settings.js';
 import { recordAudit } from '../middleware/audit.js';
 
 export const internal = express.Router();
 
 function authorized(req) {
-  const key = config.gateway.inboundApiKey;
+  const key = inboundApiKey();
   if (!key) return false;
   const provided = (req.get('authorization') || '').replace(/^Bearer\s+/i, '');
   const a = Buffer.from(provided);
@@ -29,8 +29,8 @@ function authorized(req) {
 // Gate every internal route: 503 if the feature isn't configured, 401 if the
 // caller's Bearer key is missing/wrong.
 internal.use(express.json({ limit: '16kb' }), (req, res, next) => {
-  if (!config.gateway.inboundApiKey) {
-    return res.status(503).json({ error: 'not_configured', message: 'GATEWAY_INBOUND_API_KEY is not set on the Gateway.' });
+  if (!inboundApiKey()) {
+    return res.status(503).json({ error: 'not_configured', message: 'No inbound API key is set on the Gateway (set it in /admin or GATEWAY_INBOUND_API_KEY).' });
   }
   if (!authorized(req)) {
     recordAudit({ event_type: 'sms', actor: 'acuity', ip: req.ip, success: false, detail: { route: req.path, reason: 'bad_auth' } });
@@ -42,7 +42,7 @@ internal.use(express.json({ limit: '16kb' }), (req, res, next) => {
 // Connectivity + auth probe (lets the Acuity side confirm reachability and key
 // before wiring the send button).
 internal.get('/ping', (_req, res) => {
-  res.json({ ok: true, smsEnabled: config.cellcast.enabled, sender: config.cellcast.senderId || null });
+  res.json({ ok: true, smsEnabled: smsEnabled(), sender: cellcastSenderId() });
 });
 
 // Send an SMS to a patient on Acuity's behalf.

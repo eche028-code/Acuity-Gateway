@@ -5,7 +5,7 @@
 // that number; if none are upcoming, fall back to the most recently CREATED
 // booking for that number; if the number matches nothing, return null (the reply
 // is still logged and surfaced to staff uncorrelated).
-import { normalizeAuNumber } from '../sms/cellcast.js';
+import { normalizeAuNumber } from '../sms/format.js';
 
 /**
  * @param candidates rows of { id, phone, appointment_datetime, created_at }

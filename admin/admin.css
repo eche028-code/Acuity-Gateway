@@ -120,3 +120,15 @@ tr:last-child td { border-bottom: 0; }
 .pw-panel input { width: 100%; }
 .pw-panel p { margin: 2px 0 0; }
 .pw-panel__actions { display: flex; gap: 8px; }
+
+/* Integrations panel */
+#int-panel { max-width: 480px; }
+.int-block { padding: 14px 0; border-top: 1px solid var(--line); }
+.int-block:first-of-type { border-top: 0; padding-top: 0; }
+.int-block h4 { margin: 0 0 8px; font-size: 14px; }
+.int-block form { display: flex; flex-direction: column; gap: 10px; }
+.int-block input { width: 100%; }
+.int-test { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.int-test input { flex: 1 1 160px; width: auto; }
+#int-genkey-reveal { margin-top: 10px; }
+#int-genkey-value { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12px; }

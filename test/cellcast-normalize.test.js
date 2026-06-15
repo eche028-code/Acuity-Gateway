@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeAuNumber } from '../src/sms/cellcast.js';
+import { normalizeAuNumber } from '../src/sms/format.js';
 
 test('normalizeAuNumber: AU mobile forms → E.164', () => {
   assert.equal(normalizeAuNumber('0412345678'), '+61412345678');

@@ -5,6 +5,7 @@
 // attempts are audit-logged. The reconciliation report lives here too (#7):
 // collisions are surfaced for a human to resolve — never auto-merged.
 import express from 'express';
+import crypto from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db } from '../db/index.js';
@@ -23,6 +24,12 @@ import { runPurge } from '../services/purge.js';
 import { processQueue } from '../services/sync.js';
 import { sendStaffSms, addSuppression, removeSuppression } from '../services/sms.js';
 import { normalizeAuNumber } from '../sms/cellcast.js';
+import {
+  settingsStatus,
+  setCellcastApiKey,
+  setCellcastSenderId,
+  setInboundApiKey,
+} from '../services/settings.js';
 
 export const admin = express.Router();
 const here = dirname(fileURLToPath(import.meta.url));
@@ -211,6 +218,45 @@ admin.post('/api/purge', requireAdmin, (req, res) => {
 admin.post('/api/sync', requireAdmin, async (req, res, next) => {
   try {
     res.json(await processQueue());
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Integration settings (Cellcast key/sender + Acuity inbound key) ──
+// Stored DB-side (overriding .env), so they can be set without a restart.
+admin.get('/api/settings', requireAdmin, (_req, res) => {
+  res.json(settingsStatus());
+});
+
+// Set/clear the Cellcast API key and/or sender id. Empty string clears the DB
+// override (falls back to .env). Never echoes the stored secret back.
+admin.post('/api/settings/cellcast', requireAdmin, (req, res) => {
+  const { apiKey, senderId } = req.body || {};
+  if (apiKey !== undefined) setCellcastApiKey(apiKey);
+  if (senderId !== undefined) setCellcastSenderId(senderId);
+  recordAudit({ event_type: 'settings', actor: 'admin', ip: req.ip, success: true, detail: { cellcastApiKey: apiKey !== undefined, cellcastSender: senderId !== undefined } });
+  res.json({ ok: true, settings: settingsStatus() });
+});
+
+// Generate a fresh Acuity inbound key and return it ONCE (to copy into Acuity).
+admin.post('/api/settings/inbound-key/generate', requireAdmin, (req, res) => {
+  const key = crypto.randomBytes(24).toString('hex');
+  setInboundApiKey(key);
+  recordAudit({ event_type: 'settings', actor: 'admin', ip: req.ip, success: true, detail: { inboundKey: 'generated' } });
+  res.json({ ok: true, key, settings: settingsStatus() });
+});
+
+// Send a one-off test SMS (verifies the Cellcast key end-to-end).
+admin.post('/api/settings/test-sms', requireAdmin, async (req, res, next) => {
+  try {
+    const number = normalizeAuNumber((req.body || {}).to);
+    if (!number) return res.status(400).json({ error: 'bad_number', message: 'Enter a valid AU mobile.' });
+    const result = await sendStaffSms({ to: number, message: 'Gateway test SMS — your Cellcast integration is working. Please ignore.', ip: req.ip });
+    if (result.ok) return res.json({ ok: true, providerId: result.providerId });
+    if (result.reason === 'suppressed') return res.status(409).json({ error: 'suppressed', message: 'This number has opted out.' });
+    if (result.reason === 'sms_disabled') return res.status(409).json({ error: 'sms_disabled', message: 'No Cellcast key configured.' });
+    return res.status(502).json({ error: 'send_failed', message: result.error || 'Cellcast send failed.' });
   } catch (err) {
     next(err);
   }
