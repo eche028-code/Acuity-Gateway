@@ -44,8 +44,9 @@ Patients → iframe portal → Gateway (Express, on Lightsail)
   `POST /appointments` (idempotent via `idempotencyKey`; `409` on slot clash),
   `GET /changes?since=<cursor>`, `GET /clients?search=`.
 - `503 {error:"gateway_disabled"|"not_configured"}` = "not ready" → Gateway keeps queuing.
-- IDs are **UUID strings**; timezone **AWST (+08:00, no DST)**; **self-signed** cert
-  on a raw IP/localhost (a real cert is available on the Tailscale hostname).
+- IDs are **UUID strings**; timezone **AWST (+08:00, no DST)**. The Gateway connects
+  over the Tailscale **MagicDNS hostname**, which serves a valid Let's Encrypt cert
+  (TLS verification ON); the raw `100.x` IP / localhost still uses a self-signed cert.
 - Full spec: **`docs/ACUITY_API_HANDOFF.md`**. It's implemented + merged on the Acuity side.
 
 ## Current status
@@ -61,13 +62,24 @@ Patients → iframe portal → Gateway (Express, on Lightsail)
   the 3 real appointment types (**Contact Lens Fit / Follow Up / Standard Eye
   Test**), real availability (62-day cap), `/clients` search, `/changes` cursor.
   Bearer auth and AWST timestamps confirmed.
+- **Full end-to-end run — PROVEN (2026-06-15)** over the Tailscale hostname with a
+  valid Let's Encrypt cert (TLS verification ON). The running Gateway booted, synced
+  **972 availability slots**, reported `acuity:"online"`, then a booking through the
+  real portal flow (`POST /api/bookings`) **live-verified the slot, pushed to Acuity,
+  and confirmed** (`201 state:confirmed` with a real Acuity appointment id). The slot
+  was then held locally (dropped from availability) and a duplicate re-book was
+  rejected (`409 slot_taken`). Read paths + booking write-path + conflict path +
+  slot-hold all green in one run.
+  ⚠️ A **test appointment** was created and must be cancelled in Acuity:
+  id `70e3e555-753f-45d9-9473-d3eb8dc9b78d`, **2026-08-11 17:30 AWST**, Contact Lens
+  Fit, patient "GatewayTest DeleteMe".
 
 **🟡 Built but not yet verified end-to-end**
-- No sustained green run of the full Gateway (Acuity keeps dropping — see blocker).
-- **Booking write-path** (`POST /appointments` + idempotency + `409` conflict) is
-  coded but **not yet tested against real Acuity** (it creates a real appointment).
-  This is the most important untested path.
-- The ongoing `/changes` poll loop hasn't been exercised against a real change.
+- The `/changes` poll loop runs and returns a valid cursor, but hasn't been observed
+  propagating a **real front-desk change** (a book/cancel made directly in Acuity).
+- **Outage-queue replay**: bookings queue when Acuity is down (resilience path), but
+  the reconnect/reconciliation replay hasn't been exercised against real Acuity.
+- SMS against a real Cellcast key (still no-ops cleanly without one).
 
 **⛔ THE BLOCKER (external to the Gateway)**
 - The **Acuity server does not stay running** — it comes up, serves correctly for
@@ -114,6 +126,10 @@ verification, especially of the booking write-path (`POST /appointments`).
   `ACUITY_TLS_INSECURE`, dev/self-signed only). A scoped custom dispatcher did
   **not** connect to `localhost` reliably (IPv4/IPv6), so the client uses Node's
   global fetch. The `undici` dep briefly added for this has been removed.
+- **API key gotcha:** a Bearer key supplied in a later hand-off did **not** match the
+  active key (→ `401 unauthorized`); the working key was the one already in `.env`.
+  If you hit 401, confirm the active key in Acuity → System Admin → Gateway and
+  update `.env` — don't assume a pasted key is current.
 - **Lightsail target = 1 GB RAM / 40 GB disk** — `setup.sh` adds swap, caps the
   Node heap, caps journald.
 - The Gateway is **backend-agnostic** except `src/acuity/client.js` and the sync
