@@ -3,8 +3,11 @@
 // CANONICAL PII rule: purge a pending booking only when
 //   synced == true  AND  appointment_date is older than the backstop window.
 // Age ALONE never purges, and un-synced bookings (the outage-recovery queue)
-// are exempt regardless of age. Also trims old sms_log rows. Every run logs
-// what it purged to the audit trail.
+// are exempt regardless of age. Also trims old sms_log rows — EXCEPT inbound
+// replies still awaiting staff (action_status='open'), which are unfinished work
+// and would otherwise vanish silently at the retention cutoff; they persist until
+// handled. (Opt-out suppressions live in their own table and are never purged.)
+// Every run logs what it purged to the audit trail.
 import { db, getState, setState } from '../db/index.js';
 import { config } from '../config.js';
 import { recordAudit } from '../middleware/audit.js';
@@ -15,7 +18,10 @@ import { logger } from '../lib/logger.js';
 const purgePii = db.prepare(
   `DELETE FROM pending_bookings WHERE synced = 1 AND date(appointment_date) < date('now', ?)`,
 );
-const purgeSms = db.prepare(`DELETE FROM sms_log WHERE created_at < ?`);
+// Keep unhandled inbound replies (action_status='open') regardless of age.
+const purgeSms = db.prepare(
+  `DELETE FROM sms_log WHERE created_at < ? AND NOT (direction = 'inbound' AND action_status = 'open')`,
+);
 
 export function runPurge(trigger = 'scheduled') {
   const backstop = `-${config.retention.backstopDays} days`;
