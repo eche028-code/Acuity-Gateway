@@ -78,27 +78,19 @@ Patients → iframe portal → Gateway (Express, on Lightsail)
   (an earlier concurrency-crash hardening, already done on the Acuity side).
 
 **⬜ Not done yet (Gateway side)**
-- **Commit the integration rebuild** (it's uncommitted — see below).
-- Remove the now-unused `undici` dependency.
 - Production cert: switch from self-signed + `ACUITY_TLS_INSECURE=true` to
   `tailscale serve` on the `*.ts.net` hostname (real cert) and set the flag false.
 - Deploy the integrated build to Lightsail (never deployed; `setup.sh` exists).
 - Test SMS against a real Cellcast key (currently no-ops cleanly); no automated
   test suite exists; admin MFA is optional/unbuilt.
 
-## ⚠️ Uncommitted work
+## Commit state
 
-Last commit on `main` is **`81f5035`** (the older cloud-Acuity-targeted version).
-The **entire live-integration rebuild is in the working tree, NOT committed:**
-- `src/acuity/client.js` (rewritten to the local Gateway API contract, Bearer,
-  global `fetch`, `ACUITY_TLS_INSECURE`),
-- `/changes` cursor polling in `src/services/sync.js` (replaced inbound webhooks),
-- TEXT-id schema (`src/db/schema.sql`), and updated `availability.js`,
-  `patients.js`, `booking.js`, `routes/portal.js`, `routes/webhooks.js`, `server.js`,
-- `config.js`, `.env.example`, `package.json` (added `undici`),
-- the 3 `docs/ACUITY_*.md` hand-offs + this file.
-
-**Commit all of this once there's one clean end-to-end verification.**
+The full live-integration rebuild is **committed on `main`** as **`bfc5e23`**
+(retarget to the clinic's self-hosted Acuity Gateway API), on top of `81f5035`;
+a follow-up commit removed the unused `undici` dependency. Neither is pushed yet
+(`main` is **ahead of `origin/main`**) — push once there's one clean end-to-end
+verification, especially of the booking write-path (`POST /appointments`).
 
 ## How to run (dev, on this machine)
 
@@ -120,9 +112,9 @@ The **entire live-integration rebuild is in the working tree, NOT committed:**
   compile native addons (no VS C++ toolset; spaces in the path). Needs **Node ≥24**.
 - Acuity **IDs are stored as TEXT** (UUIDs) — schema changed from INTEGER.
 - **TLS-skip is process-wide** via `NODE_TLS_REJECT_UNAUTHORIZED=0` (gated behind
-  `ACUITY_TLS_INSECURE`, dev/self-signed only). A scoped undici Agent did **not**
-  connect to `localhost` reliably (IPv4/IPv6), so the client uses Node global fetch.
-  → `undici` is now unused; remove it.
+  `ACUITY_TLS_INSECURE`, dev/self-signed only). A scoped custom dispatcher did
+  **not** connect to `localhost` reliably (IPv4/IPv6), so the client uses Node's
+  global fetch. The `undici` dep briefly added for this has been removed.
 - **Lightsail target = 1 GB RAM / 40 GB disk** — `setup.sh` adds swap, caps the
   Node heap, caps journald.
 - The Gateway is **backend-agnostic** except `src/acuity/client.js` and the sync

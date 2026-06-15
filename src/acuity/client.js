@@ -3,8 +3,8 @@
 // base `${ACUITY_API_BASE}/api/gateway/v1`, `Authorization: Bearer <key>`.
 //
 // TLS: when ACUITY_TLS_INSECURE=true (self-signed cert on localhost / a raw
-// Tailscale IP) we skip verification — but SCOPED to this client only via a
-// dedicated undici dispatcher, so the rest of the process keeps normal TLS.
+// Tailscale IP) we skip verification via the process-wide
+// NODE_TLS_REJECT_UNAUTHORIZED flag (details below) — dev/self-signed only.
 //
 // It distinguishes "Acuity not ready / unreachable" (network error, timeout,
 // 5xx, or 503 gateway_disabled — keep queuing) from real client errors (401/403
@@ -20,7 +20,7 @@ const TIMEOUT_MS = 8000;
 // dev case (ACUITY_TLS_INSECURE); production uses the Tailscale hostname's real
 // cert and leaves verification ON. We use Node's global fetch deliberately — its
 // default dispatcher does happy-eyeballs, so `localhost` connects whether the
-// server is on IPv4 or IPv6 (a custom undici Agent did not).
+// server is on IPv4 or IPv6 (a scoped custom dispatcher did not connect reliably).
 if (config.acuity.tlsInsecure) {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   logger.warn('ACUITY_TLS_INSECURE=true — TLS certificate verification is DISABLED (dev only)');
