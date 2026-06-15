@@ -19,6 +19,7 @@ import {
 import { portal } from './routes/portal.js';
 import { admin } from './routes/admin.js';
 import { webhooks } from './routes/webhooks.js';
+import { internal } from './routes/internal.js';
 import { refreshAvailability } from './services/availability.js';
 import { checkHealth, pollChanges } from './services/sync.js';
 import { runPurgeIfDue } from './services/purge.js';
@@ -51,6 +52,10 @@ app.use('/api', portal);
 
 // Admin dashboard (password-gated inside the router).
 app.use('/admin', admin);
+
+// Internal API for the clinic's Acuity instance (Bearer-key gated inside the
+// router; intended to be reached only over Tailscale in production).
+app.use('/internal', internal);
 
 // Static booking portal (the iframe target).
 app.use(express.static(resolve(here, '../public')));

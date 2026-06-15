@@ -106,6 +106,13 @@ export const config = {
     hour: int('SMS_REMINDER_HOUR', 10),
   },
 
+  // Internal server-to-server API the clinic's Acuity instance calls (Acuity →
+  // Gateway), e.g. to send an SMS without Acuity holding the Cellcast key. Shared
+  // Bearer key; the endpoint is DISABLED when this is empty (never an open relay).
+  gateway: {
+    inboundApiKey: optional('GATEWAY_INBOUND_API_KEY', ''),
+  },
+
   // Short-lived portal session tokens (token-based, not cookies — spec §7).
   session: {
     secret: optional('SESSION_SECRET', ''), // empty => random per-boot secret
