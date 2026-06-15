@@ -13,85 +13,88 @@
         <p id="mode-banner" class="banner" hidden></p>
       </header>
 
-      <!-- Step 1: service -->
-      <section id="step-service" class="step">
-        <h2 class="step__title"><span class="step__num">1</span> Choose a service</h2>
-        <div id="service-list" class="options" role="list">
-          <p class="muted">Loading services…</p>
+      <!-- Step 1: practitioner -->
+      <section id="step-practitioner" class="step">
+        <h2 class="step__title"><span class="step__num">1</span> Choose your optometrist</h2>
+        <label class="field">
+          <span class="field__label">Optometrist</span>
+          <select id="practitioner-select" class="select"></select>
+        </label>
+        <div class="actions actions--end">
+          <button id="practitioner-next" class="btn" type="button">Continue</button>
         </div>
       </section>
 
-      <!-- Step 2: date & time -->
-      <section id="step-slot" class="step" hidden>
+      <!-- Step 2: time (calendar) -->
+      <section id="step-time" class="step" hidden>
         <h2 class="step__title"><span class="step__num">2</span> Pick a time</h2>
-        <p class="muted" id="slot-subtitle"></p>
-        <div class="slot-grid">
-          <div>
-            <h3 class="sub">Date</h3>
-            <div id="date-list" class="options options--compact" role="list"></div>
+        <div class="cal">
+          <div class="cal__head">
+            <button id="cal-prev" class="cal__nav" type="button" aria-label="Previous month">‹</button>
+            <span id="cal-month" class="cal__month"></span>
+            <button id="cal-next" class="cal__nav" type="button" aria-label="Next month">›</button>
           </div>
-          <div>
-            <h3 class="sub">Time</h3>
-            <div id="time-list" class="options options--compact" role="list">
-              <p class="muted">Select a date first.</p>
-            </div>
+          <div class="cal__dow">
+            <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
           </div>
+          <div id="cal-grid" class="cal__grid"></div>
+          <p class="cal__legend"><span>☀️ Morning</span><span>🌇 Afternoon</span><span>🌙 Evening</span></p>
         </div>
-        <button class="link-btn" data-back="service" type="button">← Back to services</button>
+        <div id="time-panel" class="time-panel" hidden>
+          <h3 class="sub" id="time-panel-date"></h3>
+          <div id="time-list" class="options"></div>
+        </div>
+        <button class="link-btn" data-back="practitioner" type="button">← Back</button>
       </section>
 
-      <!-- Step 3: identity -->
-      <section id="step-identity" class="step" hidden>
-        <h2 class="step__title"><span class="step__num">3</span> Your details</h2>
-        <div class="tabs" role="tablist">
-          <button class="tab is-active" id="tab-existing" data-tab="existing" role="tab" type="button">
-            Existing patient
-          </button>
-          <button class="tab" id="tab-new" data-tab="new" role="tab" type="button">
-            New patient
-          </button>
-        </div>
+      <!-- Step 3: appointment type -->
+      <section id="step-type" class="step" hidden>
+        <h2 class="step__title"><span class="step__num">3</span> Type of appointment</h2>
+        <p class="muted" id="type-subtitle"></p>
+        <div id="type-list" class="options"></div>
+        <button class="link-btn" data-back="time" type="button">← Back</button>
+      </section>
 
-        <div id="pane-existing" class="pane">
-          <p class="muted">Find your record by phone number or name.</p>
-          <div class="search-row">
-            <input id="search-input" type="text" inputmode="tel" autocomplete="off"
-                   placeholder="Phone number or name" aria-label="Search by phone or name" />
-            <button id="search-btn" class="btn btn--ghost" type="button">Search</button>
-          </div>
-          <div id="search-results" class="results"></div>
+      <!-- Step 4: details -->
+      <section id="step-details" class="step" hidden>
+        <h2 class="step__title"><span class="step__num">4</span> Your details</h2>
+        <p class="muted">Find your record by mobile or name, or add yourself as a new patient.</p>
+        <div class="search-row">
+          <input id="search-input" type="text" inputmode="tel" autocomplete="off"
+                 placeholder="Mobile number or name" aria-label="Search by mobile or name" />
+          <button id="search-btn" class="btn btn--ghost" type="button">Search</button>
+          <button id="new-patient-btn" class="btn btn--ghost" type="button">New patient</button>
         </div>
-
-        <div id="pane-new" class="pane" hidden>
-          <p class="muted">First time here? Enter your details below.</p>
-        </div>
+        <div id="search-results" class="results"></div>
 
         <form id="details-form" class="form" novalidate>
-          <div class="form__row">
-            <label>First name <input name="firstName" autocomplete="given-name" required /></label>
-            <label>Last name <input name="lastName" autocomplete="family-name" required /></label>
-          </div>
-          <div class="form__row">
-            <label>Email <input name="email" type="email" autocomplete="email" required /></label>
-            <label>Phone <input name="phone" type="tel" autocomplete="tel" /></label>
-          </div>
-          <div id="new-patient-fields" class="new-fields" hidden>
-            <label>Address <input name="address" autocomplete="street-address" /></label>
+          <fieldset id="details-fields" class="fieldset" disabled>
             <div class="form__row">
-              <label>Suburb <input name="city" autocomplete="address-level2" /></label>
-              <label>State <input name="state" autocomplete="address-level1" /></label>
-              <label>Postcode <input name="postcode" autocomplete="postal-code" inputmode="numeric" /></label>
+              <label>First name <input name="firstName" autocomplete="given-name" /></label>
+              <label>Last name <input name="lastName" autocomplete="family-name" /></label>
             </div>
-          </div>
-          <label>Notes (optional) <textarea name="notes" rows="2"></textarea></label>
+            <div class="form__row">
+              <label>Mobile <input name="phone" type="tel" autocomplete="tel" /></label>
+              <label>Email (optional) <input name="email" type="email" autocomplete="email" /></label>
+            </div>
+            <div id="new-patient-fields" class="new-fields" hidden>
+              <label>Address <input name="address" autocomplete="street-address" /></label>
+              <div class="form__row">
+                <label>Suburb <input name="city" autocomplete="address-level2" /></label>
+                <label>State <input name="state" autocomplete="address-level1" /></label>
+                <label>Postcode <input name="postcode" autocomplete="postal-code" inputmode="numeric" /></label>
+              </div>
+            </div>
+            <label>Notes (optional) <textarea name="notes" rows="2"></textarea></label>
+          </fieldset>
           <div class="actions">
-            <button class="link-btn" data-back="slot" type="button">← Back</button>
-            <button id="submit-btn" class="btn" type="submit">Review &amp; confirm</button>
+            <button class="link-btn" data-back="type" type="button">← Back</button>
+            <button id="submit-btn" class="btn" type="submit" disabled>Review &amp; confirm</button>
           </div>
         </form>
       </section>
 
-      <!-- Step 4: result -->
+      <!-- Step 5: result -->
       <section id="step-result" class="step" hidden>
         <div id="result-card" class="result-card"></div>
         <button id="restart-btn" class="btn btn--ghost" type="button">Book another</button>

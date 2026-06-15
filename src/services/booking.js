@@ -109,6 +109,7 @@ export async function createBooking(input, ctx = {}) {
   const live = await verifySlotLive({
     appointmentTypeId: record.appointment_type_id,
     datetime: record.appointment_datetime,
+    practitionerId: record.calendar_id,
   });
   if (live.reachable && !live.open) {
     return { ok: false, code: 'slot_taken', message: 'That time is no longer available. Please choose another.' };

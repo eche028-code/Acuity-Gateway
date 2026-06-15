@@ -11,6 +11,8 @@ import {
   getAppointmentTypes,
   getOpenDates,
   getOpenTimes,
+  getDaySummaries,
+  getPractitioners,
 } from '../services/availability.js';
 import { searchPatients } from '../services/patients.js';
 import { createBooking } from '../services/booking.js';
@@ -29,6 +31,10 @@ portal.get('/appointment-types', (_req, res) => {
   res.json({ appointmentTypes: getAppointmentTypes() });
 });
 
+portal.get('/practitioners', (_req, res) => {
+  res.json({ practitioners: getPractitioners() });
+});
+
 portal.get('/availability/dates', (req, res) => {
   const appointmentTypeId = (req.query.appointmentTypeId || '').toString();
   if (!appointmentTypeId) return res.status(400).json({ error: 'appointmentTypeId is required' });
@@ -37,7 +43,7 @@ portal.get('/availability/dates', (req, res) => {
   const horizon = new Date(today);
   horizon.setDate(horizon.getDate() + 180);
   const to = req.query.to || horizon.toISOString().slice(0, 10);
-  res.json({ dates: getOpenDates(appointmentTypeId, from, to) });
+  res.json({ dates: getOpenDates(appointmentTypeId, from, to, (req.query.practitionerId || '').toString()) });
 });
 
 portal.get('/availability/times', (req, res) => {
@@ -46,11 +52,23 @@ portal.get('/availability/times', (req, res) => {
   if (!appointmentTypeId || !date) {
     return res.status(400).json({ error: 'appointmentTypeId and date are required' });
   }
-  const times = getOpenTimes(appointmentTypeId, date).map((r) => ({
+  const times = getOpenTimes(appointmentTypeId, date, (req.query.practitionerId || '').toString()).map((r) => ({
     time: r.slot_datetime,
     duration: r.duration_minutes,
   }));
   res.json({ times });
+});
+
+// Per-day availability summary (morning/afternoon/evening flags) for the calendar.
+portal.get('/availability/calendar', (req, res) => {
+  const appointmentTypeId = (req.query.appointmentTypeId || '').toString();
+  if (!appointmentTypeId) return res.status(400).json({ error: 'appointmentTypeId is required' });
+  const today = new Date();
+  const from = req.query.from || today.toISOString().slice(0, 10);
+  const horizon = new Date(today);
+  horizon.setDate(horizon.getDate() + 180);
+  const to = req.query.to || horizon.toISOString().slice(0, 10);
+  res.json({ days: getDaySummaries(appointmentTypeId, from, to, (req.query.practitionerId || '').toString()) });
 });
 
 // Lightweight public status so the portal can show "live" vs "offline booking".
@@ -72,14 +90,13 @@ portal.post('/patients/search', requireSession, searchRateLimit(), async (req, r
 portal.post('/bookings', requireSession, bookingRateLimit(), async (req, res, next) => {
   try {
     const b = req.body || {};
-    // Validation. email is required for non-admin Acuity bookings (confirmed
-    // against the Acuity API), alongside a name and a slot.
+    // Validation. A name and a slot are required; email is optional (the clinic
+    // accepts phone-only / existing-patient bookings).
     const errors = [];
     if (!b.appointmentTypeId) errors.push('appointmentTypeId');
     if (!b.datetime) errors.push('datetime');
     if (!b.firstName) errors.push('firstName');
     if (!b.lastName) errors.push('lastName');
-    if (!b.email) errors.push('email');
     if (errors.length) {
       return res.status(400).json({ error: 'missing_fields', fields: errors });
     }
