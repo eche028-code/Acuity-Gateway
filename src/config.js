@@ -71,6 +71,8 @@ export const config = {
     apiBase: optional('ACUITY_API_BASE', 'https://localhost:3002'),
     // Skip TLS verification — only for a self-signed cert (localhost / raw Tailscale IP).
     tlsInsecure: bool('ACUITY_TLS_INSECURE', false),
+    // Forward inbound patient SMS replies to Acuity (POST /sms/inbound). Best-effort.
+    forwardInboundSms: bool('FORWARD_INBOUND_SMS_TO_ACUITY', true),
   },
 
   clinic: {

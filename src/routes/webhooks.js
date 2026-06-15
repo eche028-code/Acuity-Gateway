@@ -6,7 +6,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import { config } from '../config.js';
-import { recordInboundSms } from '../services/sms.js';
+import { recordInboundSms, forwardInboundToAcuity } from '../services/sms.js';
 import { recordAudit } from '../middleware/audit.js';
 import { logger } from '../lib/logger.js';
 
@@ -48,5 +48,16 @@ webhooks.post('/cellcast', express.json({ limit: '16kb' }), (req, res) => {
     body,
   });
   recordAudit({ event_type: 'sms', actor: 'cellcast', success: p.status !== 'failed', detail: { type: p.type, status: p.status, id: p._id, duplicate: result?.duplicate || undefined, intent: result?.intent || undefined } });
+
+  // Forward fresh inbound replies into Acuity (best-effort; don't delay the 200).
+  if (direction === 'inbound' && result?.logged && !result?.duplicate) {
+    forwardInboundToAcuity({
+      from: p.sender || p.receiver || null,
+      body,
+      providerId: p._id || null,
+      intent: result.intent,
+      bookingId: result.bookingId,
+    }).catch(() => {});
+  }
   res.status(200).json({ received: true });
 });

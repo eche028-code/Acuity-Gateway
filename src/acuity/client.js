@@ -120,4 +120,9 @@ export const acuity = {
   searchClients({ search }) {
     return request('GET', '/clients', { query: { search } });
   },
+
+  /** POST /sms/inbound — forward a patient's inbound SMS reply to Acuity. */
+  forwardInboundSms(payload) {
+    return request('POST', '/sms/inbound', { body: payload });
+  },
 };

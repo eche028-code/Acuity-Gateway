@@ -15,6 +15,7 @@ import { logger } from '../lib/logger.js';
 import { parseIntent } from './sms-intent.js';
 import { pickBooking } from './sms-match.js';
 import { smsEnabled } from './settings.js';
+import { acuity, AcuityError } from '../acuity/client.js';
 
 const insertSms = db.prepare(`
   INSERT INTO sms_log (direction, recipient, status, provider_id, booking_id, body,
@@ -145,6 +146,42 @@ const updateDlrStatus = db.prepare(
 function correlate(number, nowIso) {
   if (!number) return null;
   return pickBooking(recentWithPhone.all(), number, nowIso);
+}
+
+// Booking details used to enrich a reply forwarded to Acuity.
+const bookingForForward = db.prepare(
+  `SELECT acuity_appointment_id, first_name, last_name FROM pending_bookings WHERE id = ?`,
+);
+
+// Best-effort: forward a patient's inbound reply INTO Acuity so staff see it in
+// their own system (Gateway → Acuity, POST /sms/inbound). Never throws — the reply
+// is already logged and surfaced in /admin; a forward failure is audited only.
+export async function forwardInboundToAcuity({ from, body, providerId, intent, bookingId = null, receivedAt = null }) {
+  if (!config.acuity.forwardInboundSms) return;
+  let appointmentId = null;
+  let patient = null;
+  if (bookingId) {
+    const b = bookingForForward.get(bookingId);
+    if (b) {
+      appointmentId = b.acuity_appointment_id || null;
+      patient = { firstName: b.first_name || null, lastName: b.last_name || null };
+    }
+  }
+  try {
+    await acuity.forwardInboundSms({
+      from: normalizeAuNumber(from) || from,
+      message: body || null,
+      receivedAt: receivedAt || new Date().toISOString(),
+      providerId: providerId || null,
+      intent: intent || 'unknown',
+      appointmentId,
+      patient,
+    });
+  } catch (err) {
+    const unreachable = err instanceof AcuityError && err.unreachable;
+    recordAudit({ event_type: 'sms', actor: 'system', success: false, detail: { kind: 'forward_inbound', provider_id: providerId, unreachable: !!unreachable, error: err.message } });
+    logger.warn({ providerId, err: err.message }, 'forward inbound SMS to Acuity failed');
+  }
 }
 
 // Record an inbound reply (MO) or delivery receipt (DLR) from the webhook.
