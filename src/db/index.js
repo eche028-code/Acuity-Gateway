@@ -43,11 +43,46 @@ db.prepare = (sql) => {
 // here, at connection open, guarantees that for every importer.
 const schemaSql = readFileSync(resolve(here, 'schema.sql'), 'utf8');
 db.exec(schemaSql);
+ensureColumns();
+ensureIndexes();
 logger.info({ dbPath }, 'database ready');
 
-// Kept for init.js / setup.sh; idempotent (re-applying CREATE TABLE IF NOT EXISTS).
+// Add columns/indexes that were introduced after a database was first created.
+// SQLite has no `ADD COLUMN IF NOT EXISTS`, and `CREATE TABLE IF NOT EXISTS`
+// never alters an existing table — so new columns on existing tables are applied
+// here, guarded by table_info so every run is idempotent. Fresh databases already
+// have these columns from schema.sql, so this is a no-op for them.
+function ensureColumns() {
+  const columns = (table) =>
+    new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((r) => r.name));
+  const add = (table, col, ddl) => {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+    logger.info({ table, col }, 'schema migration: added column');
+  };
+
+  const sms = columns('sms_log');
+  if (!sms.has('body')) add('sms_log', 'body', 'body TEXT');
+  if (!sms.has('intent')) add('sms_log', 'intent', 'intent TEXT');
+  if (!sms.has('action_status')) add('sms_log', 'action_status', 'action_status TEXT');
+  if (!sms.has('handled_at')) add('sms_log', 'handled_at', 'handled_at TEXT');
+  if (!sms.has('handled_by')) add('sms_log', 'handled_by', 'handled_by TEXT');
+
+  const pending = columns('pending_bookings');
+  if (!pending.has('reminder_sent_at')) add('pending_bookings', 'reminder_sent_at', 'reminder_sent_at TEXT');
+}
+
+// Indexes that reference columns added by ensureColumns(). Must run AFTER it, so
+// the column is guaranteed to exist on upgraded databases. CREATE INDEX IF NOT
+// EXISTS is idempotent.
+function ensureIndexes() {
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sms_action ON sms_log (action_status)');
+}
+
+// Kept for init.js / setup.sh; idempotent (CREATE ... IF NOT EXISTS + guarded ALTERs).
 export function migrate() {
   db.exec(schemaSql);
+  ensureColumns();
+  ensureIndexes();
 }
 
 // ── Small helpers for system_state (k/v) ────────────────────────────

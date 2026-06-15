@@ -99,6 +99,13 @@ export const config = {
     },
   },
 
+  // Day-before SMS reminders (outbound). Only fire when Cellcast is enabled.
+  reminders: {
+    enabled: bool('SMS_REMINDER_ENABLED', true),
+    // Daily reminder job runs once per day at/after this local hour (0-23).
+    hour: int('SMS_REMINDER_HOUR', 10),
+  },
+
   // Short-lived portal session tokens (token-based, not cookies — spec §7).
   session: {
     secret: optional('SESSION_SECRET', ''), // empty => random per-boot secret

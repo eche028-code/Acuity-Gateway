@@ -12,7 +12,8 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "mock": "node src/acuity/mock-server.js",
-    "init-db": "node src/db/init.js"
+    "init-db": "node src/db/init.js",
+    "test": "node --test"
   },
   "dependencies": {
     "cors": "^2.8.5",

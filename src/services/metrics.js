@@ -19,6 +19,9 @@ const cFailedSync = db.prepare(
 );
 const cRecon = db.prepare(`SELECT COUNT(*) n FROM reconciliation_flags WHERE status='open'`);
 const cSmsFailed = db.prepare(`SELECT COUNT(*) n FROM sms_log WHERE status='failed'`);
+// Inbound replies awaiting a human (the /admin action queue).
+const cSmsActions = db.prepare(`SELECT COUNT(*) n FROM sms_log WHERE direction='inbound' AND action_status='open'`);
+const cSmsInbound = db.prepare(`SELECT COUNT(*) n FROM sms_log WHERE direction='inbound' AND created_at >= ?`);
 const cErrors = db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE success=0 AND ts >= ?`);
 const cSlots = db.prepare(`SELECT COUNT(*) n FROM availability_cache WHERE is_available=1`);
 
@@ -41,6 +44,8 @@ export function getMetrics() {
     totalPending: cPending.get().n,
     totalSynced: cSynced.get().n,
     smsFailures: cSmsFailed.get().n,
+    smsActionsOpen: cSmsActions.get().n,
+    smsInbound24h: cSmsInbound.get(since24h).n,
     errorsLast24h: cErrors.get(since24h).n,
   };
 }

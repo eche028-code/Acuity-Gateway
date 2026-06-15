@@ -57,6 +57,9 @@ CREATE TABLE IF NOT EXISTS pending_bookings (
   last_attempt_at       TEXT,
   synced_at             TEXT,
   sync_error            TEXT,
+  -- SMS day-before reminder bookkeeping (set once a reminder is attempted, so the
+  -- daily reminder job never double-sends). Null = not yet reminded.
+  reminder_sent_at      TEXT,
   created_at            TEXT    NOT NULL,
   updated_at            TEXT    NOT NULL
 );
@@ -95,20 +98,40 @@ CREATE INDEX IF NOT EXISTS idx_audit_ts   ON audit_log (ts);
 CREATE INDEX IF NOT EXISTS idx_audit_type ON audit_log (event_type);
 
 -- ── SMS log (Cellcast send + inbound/DLR — spec #14/#16) ────────────
--- Recipient phone is PII; the nightly purge job trims rows older than the
--- configured SMS retention window.
+-- Recipient phone AND message body are PII; the nightly purge job trims rows
+-- older than the configured SMS retention window.
 CREATE TABLE IF NOT EXISTS sms_log (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  direction   TEXT NOT NULL,   -- outbound | inbound | dlr
-  recipient   TEXT,            -- destination (outbound) or sender (inbound)
-  status      TEXT,            -- queued | sent | delivered | failed | received | skipped
-  provider_id TEXT,            -- Cellcast message id, for correlation
-  booking_id  TEXT,            -- optional link to pending_bookings.id
-  error       TEXT,
-  created_at  TEXT NOT NULL
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  direction     TEXT NOT NULL,   -- outbound | inbound | dlr
+  recipient     TEXT,            -- destination (outbound) or sender (inbound), E.164
+  status        TEXT,            -- queued | sent | delivered | failed | received | skipped
+  provider_id   TEXT,            -- Cellcast message id (idempotency + DLR correlation)
+  booking_id    TEXT,            -- optional link to pending_bookings.id
+  body          TEXT,            -- message text (PII; trimmed by the sms_log purge)
+  intent        TEXT,            -- parsed inbound intent: confirm|cancel|stop|unknown
+  action_status TEXT,            -- inbound needing staff: open|handled (null = no action)
+  handled_at    TEXT,
+  handled_by    TEXT,
+  error         TEXT,
+  created_at    TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_sms_status  ON sms_log (status);
-CREATE INDEX IF NOT EXISTS idx_sms_created ON sms_log (created_at);
+CREATE INDEX IF NOT EXISTS idx_sms_status   ON sms_log (status);
+CREATE INDEX IF NOT EXISTS idx_sms_created  ON sms_log (created_at);
+-- Inbound idempotency lookup + DLR-to-outbound correlation (Cellcast retries).
+CREATE INDEX IF NOT EXISTS idx_sms_provider ON sms_log (provider_id);
+-- NOTE: indexes on the columns added above (e.g. action_status) live in
+-- db/index.js ensureIndexes(), which runs AFTER the ADD COLUMN migration — an
+-- existing DB won't have the column yet when this file is first re-applied.
+
+-- ── SMS opt-out / suppression (compliance — APP 11, ACMA) ───────────
+-- A STOP reply (or a manual admin opt-out) lands here. Checked before EVERY
+-- outbound send. EXEMPT from the retention purge — an opt-out must persist.
+CREATE TABLE IF NOT EXISTS sms_suppressions (
+  number      TEXT PRIMARY KEY,   -- E.164 normalized
+  reason      TEXT,               -- stop_reply | manual
+  created_at  TEXT NOT NULL,
+  created_by  TEXT                -- patient | admin
+);
 
 -- ── System state (key/value: connection health, sync cursors) ───────
 CREATE TABLE IF NOT EXISTS system_state (

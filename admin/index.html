@@ -58,6 +58,33 @@
         <h2>Outage queue <span id="queue-count" class="pill"></span></h2>
         <div id="queue"></div>
 
+        <h2>Messages <span id="sms-actions-count" class="pill"></span></h2>
+        <p class="muted">Inbound replies are surfaced for staff — the Gateway never auto-cancels. A STOP auto-suppresses future SMS; everything else waits here for a human.</p>
+        <div class="sms">
+          <div class="sms__list">
+            <h3>Needs attention</h3>
+            <div id="sms-actions"></div>
+            <h3>Conversations</h3>
+            <div id="sms-threads"></div>
+          </div>
+          <div class="sms__pane">
+            <div class="sms__pane-head">
+              <h3 id="sms-thread-title">Select a conversation</h3>
+              <button id="sms-suppress-btn" class="btn btn--sm btn--ghost" type="button" hidden></button>
+            </div>
+            <div id="sms-thread" class="sms__thread">
+              <div class="empty">Pick a conversation or an item that needs attention.</div>
+            </div>
+            <form id="sms-send" class="sms__send" hidden>
+              <textarea id="sms-text" rows="2" maxlength="1000" placeholder="Type a reply…"></textarea>
+              <div class="sms__send-row">
+                <button class="btn" type="submit">Send</button>
+                <span id="sms-send-msg" class="muted"></span>
+              </div>
+            </form>
+          </div>
+        </div>
+
         <h2>Recent activity</h2>
         <div id="audit"></div>
       </div>

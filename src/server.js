@@ -22,6 +22,7 @@ import { webhooks } from './routes/webhooks.js';
 import { refreshAvailability } from './services/availability.js';
 import { checkHealth, pollChanges } from './services/sync.js';
 import { runPurgeIfDue } from './services/purge.js';
+import { runRemindersIfDue } from './services/reminders.js';
 
 migrate();
 
@@ -39,8 +40,8 @@ app.use(helmetMiddleware());
 app.use(corsMiddleware());
 app.use(globalRateLimit());
 
-// Webhook receiver mounted BEFORE express.json — it needs the raw body for
-// HMAC signature verification.
+// Webhook receiver mounted here with its own JSON parser (it accepts only small
+// Cellcast callbacks); kept separate from the main API body parser below.
 app.use('/webhooks', webhooks);
 
 app.use(express.json({ limit: '100kb' }));
@@ -109,6 +110,16 @@ const server = app.listen(config.port, async () => {
       runPurgeIfDue();
     } catch (err) {
       logger.warn({ err: err.message }, 'purge job failed');
+    }
+  }, 60 * 60 * 1000);
+
+  // Day-before SMS reminders (at most once/day at/after SMS_REMINDER_HOUR).
+  setTimeout(() => runRemindersIfDue(), 90_000);
+  setInterval(() => {
+    try {
+      runRemindersIfDue();
+    } catch (err) {
+      logger.warn({ err: err.message }, 'reminders job failed');
     }
   }, 60 * 60 * 1000);
 });
