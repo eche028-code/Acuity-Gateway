@@ -4,7 +4,7 @@
 // across the rolling window, ≤62 days per the contract's range cap). The portal
 // renders from this cache (so it survives an Acuity outage); the booking flow
 // re-checks the exact slot live against Acuity before committing.
-import { db, getState, setState } from '../db/index.js';
+import { db, getState, setState, transaction } from '../db/index.js';
 import { config } from '../config.js';
 import { acuity, AcuityError } from '../acuity/client.js';
 import { setAcuityStatus } from './status.js';
@@ -93,6 +93,8 @@ export async function refreshAvailability() {
   const to = addDaysStr(Math.min(config.availability.windowDays, MAX_RANGE_DAYS));
   const ts = new Date().toISOString();
   try {
+    // ── Network phase: pull the full truth from Acuity BEFORE touching the DB,
+    // so a mid-pull outage leaves the existing cache intact (never half-wiped).
     let typesResp;
     try {
       typesResp = await acuity.listAppointmentTypes();
@@ -109,11 +111,8 @@ export async function refreshAvailability() {
     const slimTypes = types
       .filter((t) => t.active !== false)
       .map((t) => ({ id: t.id, name: t.name, duration: t.durationMinutes ?? t.duration ?? null }));
-    setState('appointment_types', JSON.stringify(slimTypes));
 
-    tentativeCloseFuture.run({ today });
-
-    let count = 0;
+    const slots = [];
     for (const type of slimTypes) {
       let avail;
       try {
@@ -121,12 +120,13 @@ export async function refreshAvailability() {
       } catch (err) {
         if (err instanceof AcuityError && err.unreachable) {
           setAcuityStatus(false);
-          return { refreshed: false, reason: 'unreachable', count };
+          logger.warn('availability refresh aborted — Acuity went unreachable mid-pull (cache unchanged)');
+          return { refreshed: false, reason: 'unreachable' };
         }
-        continue; // transient error for this type — skip it
+        continue; // transient error for this type — keep the others
       }
       for (const slot of avail.slots || []) {
-        upsertSlot.run({
+        slots.push({
           appointment_type_id: type.id,
           calendar_id: slot.practitionerId || '',
           slot_datetime: slot.start,
@@ -134,16 +134,24 @@ export async function refreshAvailability() {
           duration_minutes: slot.durationMinutes ?? type.duration ?? null,
           ts,
         });
-        count++;
       }
     }
 
-    reapplyLocalHolds.run();
-    prunePast.run({ today });
+    // ── DB phase: swap the cache to the new truth atomically. The block is free
+    // of awaits and wrapped in a transaction, so a portal read never catches the
+    // brief "everything closed" window between the tentative close and re-open.
+    transaction(() => {
+      setState('appointment_types', JSON.stringify(slimTypes));
+      tentativeCloseFuture.run({ today });
+      for (const s of slots) upsertSlot.run(s);
+      reapplyLocalHolds.run();
+      prunePast.run({ today });
+    });
+
     setAcuityStatus(true);
     setState('last_availability_refresh', ts);
-    logger.info({ slots: count }, 'availability refreshed');
-    return { refreshed: true, count };
+    logger.info({ slots: slots.length }, 'availability refreshed');
+    return { refreshed: true, count: slots.length };
   } finally {
     refreshing = false;
   }

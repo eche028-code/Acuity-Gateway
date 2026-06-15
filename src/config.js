@@ -109,7 +109,7 @@ export const config = {
 
   availability: {
     windowDays: int('AVAILABILITY_WINDOW_DAYS', 60),
-    refreshMs: int('AVAILABILITY_REFRESH_MS', 5 * 60 * 1000),
+    refreshMs: int('AVAILABILITY_REFRESH_MS', 60 * 1000),
   },
 
   retention: {

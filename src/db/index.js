@@ -65,3 +65,19 @@ export function getState(key) {
 export function setState(key, value) {
   _setState.run({ key, value: String(value), updated_at: new Date().toISOString() });
 }
+
+// Run synchronous DB mutations atomically. node:sqlite is synchronous and uses a
+// single connection, so `fn` MUST contain no awaits — keep all network I/O
+// outside. On any throw the whole batch rolls back, so readers never observe a
+// partially-applied state.
+export function transaction(fn) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const result = fn();
+    db.exec('COMMIT');
+    return result;
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}

@@ -11,7 +11,7 @@
 import { db, getState, setState } from '../db/index.js';
 import { acuity, AcuityError } from '../acuity/client.js';
 import { setAcuityStatus, getAcuityStatus } from './status.js';
-import { refreshAvailability } from './availability.js';
+import { refreshAvailability, closeSlot, openSlot } from './availability.js';
 import { sendBookingConfirmation } from './sms.js';
 import { recordAudit } from '../middleware/audit.js';
 import { logger } from '../lib/logger.js';
@@ -154,11 +154,37 @@ export async function pollChanges() {
     }
     setAcuityStatus(true);
     const changes = (resp && resp.changes) || [];
+    // Skip our own bookings echoing back — already reflected locally at booking.
     const external = changes.filter((c) => c.source !== 'gateway');
-    if (external.length > 0) {
-      logger.info({ changes: external.length }, 'external Acuity changes - refreshing availability');
-      await refreshAvailability();
+
+    // Apply each front-desk change straight to the cache so availability tracks
+    // Acuity within a poll interval (~20s), not the periodic full refresh:
+    //   created   → slot is now taken    → close it
+    //   cancelled → slot is now free     → reopen it
+    // An `updated` (reschedule) frees one slot and takes another but the record
+    // only carries the new start, so it can't be applied precisely — fall back
+    // to a full refresh to reconcile. Same for any change missing its slot.
+    let needFullRefresh = false;
+    let applied = 0;
+    for (const c of external) {
+      const type = String(c.type || '').toLowerCase();
+      if (!c.appointmentTypeId || !c.start) {
+        needFullRefresh = true;
+      } else if (type === 'created') {
+        closeSlot(c.appointmentTypeId, c.start);
+        applied++;
+      } else if (type === 'cancelled' || type === 'canceled') {
+        openSlot(c.appointmentTypeId, c.start);
+        applied++;
+      } else {
+        needFullRefresh = true; // updated / reschedule / unknown
+      }
     }
+    if (external.length > 0) {
+      logger.info({ changes: external.length, applied, fullRefresh: needFullRefresh }, 'applied external Acuity changes');
+    }
+    if (needFullRefresh) await refreshAvailability();
+
     if (resp && resp.cursor) setState('changes_cursor', resp.cursor);
   } finally {
     polling = false;
