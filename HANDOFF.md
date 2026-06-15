@@ -70,13 +70,24 @@ Patients → iframe portal → Gateway (Express, on Lightsail)
   was then held locally (dropped from availability) and a duplicate re-book was
   rejected (`409 slot_taken`). Read paths + booking write-path + conflict path +
   slot-hold all green in one run.
-  ⚠️ A **test appointment** was created and must be cancelled in Acuity:
-  id `70e3e555-753f-45d9-9473-d3eb8dc9b78d`, **2026-08-11 17:30 AWST**, Contact Lens
-  Fit, patient "GatewayTest DeleteMe".
+  ⚠️ **Test appointments to cancel in Acuity** (created during verification):
+  `70e3e555…` 2026-08-11 17:30 ("GatewayTest"), `95ed2d02…` 2026-08-11 17:00
+  ("SyncDiag"), `0e2c46e7…` 2026-08-18 09:00 ("Backstop Test").
+- **Inbound availability sync — hardened & verified mirroring Acuity (2026-06-15).**
+  Refresh is now atomic (pull-all-then-swap in one transaction) on a 60s cycle, and
+  `/changes` is applied surgically (created→close, cancelled→reopen) — commit
+  `25ce588`. Verified the Gateway cache matches Acuity's `/availability` exactly. The
+  earlier "unopened weeks shown" symptom was an **Acuity-side** bug (the API projected
+  the recurring template across unopened weeks); fixed on Acuity (`da3e8a1`, now live —
+  `/availability` honours the opened book and `POST /appointments` rejects unopened
+  dates). The interim `AVAILABILITY_WINDOW_DAYS` cap was removed once verified. See
+  `docs/ACUITY_OPENED_BOOK.md`.
 
 **🟡 Built but not yet verified end-to-end**
-- The `/changes` poll loop runs and returns a valid cursor, but hasn't been observed
-  propagating a **real front-desk change** (a book/cancel made directly in Acuity).
+- `/changes` surgical apply (created→close, cancelled→reopen) is coded + unit-tested,
+  but a **real front-desk appointment book/cancel** propagating through it hasn't been
+  watched live. (Week open/close isn't a `/changes` event yet — flagged as an Acuity
+  follow-up — so it's picked up by the verified 60s full refresh instead.)
 - **Outage-queue replay**: bookings queue when Acuity is down (resilience path), but
   the reconnect/reconciliation replay hasn't been exercised against real Acuity.
 - SMS against a real Cellcast key (still no-ops cleanly without one).
