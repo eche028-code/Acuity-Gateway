@@ -78,8 +78,6 @@ Patients → iframe portal → Gateway (Express, on Lightsail)
   (an earlier concurrency-crash hardening, already done on the Acuity side).
 
 **⬜ Not done yet (Gateway side)**
-- Production cert: switch from self-signed + `ACUITY_TLS_INSECURE=true` to
-  `tailscale serve` on the `*.ts.net` hostname (real cert) and set the flag false.
 - Deploy the integrated build to Lightsail (never deployed; `setup.sh` exists).
 - Test SMS against a real Cellcast key (currently no-ops cleanly); no automated
   test suite exists; admin MFA is optional/unbuilt.
@@ -95,13 +93,14 @@ verification, especially of the booking write-path (`POST /appointments`).
 ## How to run (dev, on this machine)
 
 - `.env` (git-ignored) currently holds:
-  `ACUITY_API_BASE=https://100.70.1.17:3002` (Acuity's Tailscale IP on this PC),
-  `ACUITY_API_KEY=<bearer key>`, `ACUITY_TLS_INSECURE=true`.
-  ⚠️ The key was pasted into chat during testing — **rotate it** in Acuity → System
-  Admin → Gateway.
+  `ACUITY_API_BASE=https://desktop-17egjmb.tail20d30d.ts.net:3002` (Acuity's
+  Tailscale MagicDNS hostname — valid Let's Encrypt cert), `ACUITY_API_KEY=<bearer
+  key>`, `ACUITY_TLS_INSECURE=false`. See `docs/ACUITY_TAILSCALE_TLS.md`.
+  ⚠️ The key has been pasted into chat — **rotate it** in Acuity → System Admin →
+  Gateway when convenient.
 - `npm install`, then `npm start`. Portal at <http://localhost:3000>, admin at
   `/admin` (set `ADMIN_PASSWORD` in `.env`).
-- Acuity must be listening at `100.70.1.17:3002` (or `localhost:3002`). Health check:
+- Acuity must be listening at that hostname on `:3002`. Health check (no `-k`):
   `GET /api/gateway/v1/health` returns `{"ok":true,...}` when healthy.
 - **`npm run mock` (`src/acuity/mock-server.js`) is now OBSOLETE** — it speaks the
   old cloud-Acuity contract. Ignore or delete it.
