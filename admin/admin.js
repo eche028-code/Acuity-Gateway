@@ -198,5 +198,34 @@ $('#purge-btn').addEventListener('click', async () => {
   try { await api('/purge', { method: 'POST' }); loadAll(); } catch { /* */ }
 });
 
+// ── Change password ─────────────────────────────────────────────────
+$('#pw-btn').addEventListener('click', () => {
+  const p = $('#pw-panel');
+  p.hidden = !p.hidden;
+  if (!p.hidden) $('#pw-current').focus();
+});
+$('#pw-cancel').addEventListener('click', () => {
+  $('#pw-form').reset();
+  $('#pw-msg').hidden = true;
+  $('#pw-panel').hidden = true;
+});
+$('#pw-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('#pw-msg');
+  const show = (text, ok) => { msg.textContent = text; msg.className = ok ? 'ok-text' : 'error'; msg.hidden = false; };
+  const nw = $('#pw-new').value;
+  if (nw.length < 8) return show('New password must be at least 8 characters.', false);
+  if (nw !== $('#pw-confirm').value) return show('New passwords do not match.', false);
+  try {
+    await api('/password', { method: 'POST', body: { currentPassword: $('#pw-current').value, newPassword: nw } });
+    $('#pw-form').reset();
+    show('Password updated — use it the next time you sign in.', true);
+  } catch (err) {
+    show(err.status === 401 ? 'Current password is incorrect.'
+      : err.status === 400 ? 'New password is too weak (min 8 characters).'
+      : 'Could not update password.', false);
+  }
+});
+
 // Decide initial view by probing a gated endpoint.
 api('/metrics').then(showDash).catch(showLogin);

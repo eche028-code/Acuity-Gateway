@@ -28,11 +28,26 @@
           <span id="updated" class="muted"></span>
           <button id="sync-btn" class="btn btn--ghost" type="button">Replay queue</button>
           <button id="purge-btn" class="btn btn--ghost" type="button">Run purge</button>
+          <button id="pw-btn" class="btn btn--ghost" type="button">Change password</button>
           <button id="logout-btn" class="btn btn--ghost" type="button">Sign out</button>
         </div>
       </header>
 
       <div class="wrap">
+        <div id="pw-panel" class="pw-panel" hidden>
+          <form id="pw-form">
+            <h3>Change admin password</h3>
+            <input id="pw-current" type="password" placeholder="Current password" autocomplete="current-password" required />
+            <input id="pw-new" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password" required />
+            <input id="pw-confirm" type="password" placeholder="Confirm new password" autocomplete="new-password" required />
+            <div class="pw-panel__actions">
+              <button class="btn" type="submit">Save new password</button>
+              <button id="pw-cancel" class="btn btn--ghost" type="button">Cancel</button>
+            </div>
+            <p id="pw-msg" hidden></p>
+          </form>
+        </div>
+
         <h2>Status</h2>
         <div id="metrics" class="cards"></div>
 

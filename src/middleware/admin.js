@@ -6,6 +6,7 @@
 // here — unlike the cross-iframe portal, which uses Bearer tokens.
 import crypto from 'node:crypto';
 import { config } from '../config.js';
+import { getState, setState } from '../db/index.js';
 import { issueAdminToken, verifyAdminToken } from '../lib/token.js';
 import { recordAudit } from './audit.js';
 
@@ -39,9 +40,33 @@ export function ipAllowed(req) {
   return allow.length === 0 || allow.includes(req.ip);
 }
 
+// A password set from the dashboard is stored hashed (scrypt) in system_state
+// and OVERRIDES the .env ADMIN_PASSWORD, which is only a first-login bootstrap.
+const PW_KEY = 'admin_password_hash';
+
+function hashPassword(pw) {
+  const salt = crypto.randomBytes(16);
+  const derived = crypto.scryptSync(String(pw), salt, 32);
+  return `scrypt$${salt.toString('hex')}$${derived.toString('hex')}`;
+}
+function verifyHash(provided, stored) {
+  const [scheme, saltHex, hashHex] = String(stored).split('$');
+  if (scheme !== 'scrypt' || !saltHex || !hashHex) return false;
+  const expected = Buffer.from(hashHex, 'hex');
+  const derived = crypto.scryptSync(String(provided ?? ''), Buffer.from(saltHex, 'hex'), expected.length);
+  return derived.length === expected.length && crypto.timingSafeEqual(derived, expected);
+}
+
+export function setAdminPassword(newPassword) {
+  setState(PW_KEY, hashPassword(newPassword));
+}
+
 export function checkPassword(provided) {
+  const stored = getState(PW_KEY);
+  if (stored) return verifyHash(provided, stored);
+  // Bootstrap: until a password is set from the dashboard, accept the .env one.
   const expected = config.admin.password || '';
-  if (!expected) return false; // refuse if no admin password configured
+  if (!expected) return false; // fail closed if neither is configured
   const a = Buffer.from(String(provided ?? ''));
   const b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);

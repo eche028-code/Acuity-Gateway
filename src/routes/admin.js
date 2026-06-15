@@ -11,6 +11,7 @@ import { db } from '../db/index.js';
 import {
   requireAdmin,
   checkPassword,
+  setAdminPassword,
   ipAllowed,
   setAdminCookie,
   clearAdminCookie,
@@ -42,6 +43,21 @@ admin.post('/api/login', adminLoginRateLimit(), (req, res) => {
 
 admin.post('/api/logout', (req, res) => {
   clearAdminCookie(res);
+  res.json({ ok: true });
+});
+
+// Change the admin password (requires a valid session + the current password).
+admin.post('/api/password', requireAdmin, (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!checkPassword(currentPassword)) {
+    recordAudit({ event_type: 'admin_password', actor: 'admin', ip: req.ip, success: false, detail: { reason: 'bad_current' } });
+    return res.status(401).json({ error: 'invalid_credentials' });
+  }
+  if (!newPassword || String(newPassword).length < 8) {
+    return res.status(400).json({ error: 'weak_password', message: 'New password must be at least 8 characters.' });
+  }
+  setAdminPassword(newPassword);
+  recordAudit({ event_type: 'admin_password', actor: 'admin', ip: req.ip, success: true });
   res.json({ ok: true });
 });
 
