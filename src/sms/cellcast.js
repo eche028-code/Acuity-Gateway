@@ -47,3 +47,29 @@ export async function sendSms({ to, message }) {
     clearTimeout(timer);
   }
 }
+
+// Poll inbound replies (v1 has no message id on these — dedup is the caller's job).
+// GET /api/v1/apiClient/getResponses?page= → data.items[] of { from, body, received_at, message_id }.
+export async function getResponses(page = 1) {
+  if (!smsEnabled()) return { ok: false, skipped: true, reason: 'sms_disabled', items: [] };
+  const url = `${cellcastApiBase()}/api/v1/apiClient/getResponses?page=${encodeURIComponent(page)}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${cellcastApiKey()}`, Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || (data && data.status === false)) {
+      return { ok: false, status: res.status, error: (data && data.msg) || `HTTP ${res.status}`, items: [] };
+    }
+    const d = data?.data || {};
+    return { ok: true, items: d.items || [], totalPages: d.totalPages || 1, page: d.current || page };
+  } catch (err) {
+    return { ok: false, error: err.message, unreachable: true, items: [] };
+  } finally {
+    clearTimeout(timer);
+  }
+}

@@ -32,11 +32,9 @@ webhooks.post('/cellcast', express.json({ limit: '16kb' }), (req, res) => {
   const p = req.body || {};
   // 'receive' = inbound reply (MO); 'send' = delivery receipt (DLR).
   const direction = p.type === 'receive' ? 'inbound' : 'dlr';
-  // The exact inbound body field can only be pinned against a live Cellcast
-  // payload (needs a public URL — handoff §3), so read the likely names. If a
-  // real payload uses a different key, log the keys (not values — PII) once and
-  // add it here.
-  const body = p.message ?? p.body ?? p.text ?? p.content ?? null;
+  // Cellcast's inbound webhook puts the customer's text in `reply` (verified
+  // against the live docs/payload); the other names are defensive fallbacks.
+  const body = p.reply ?? p.message ?? p.body ?? p.text ?? p.content ?? null;
   if (direction === 'inbound' && body == null) {
     logger.warn({ keys: Object.keys(p) }, 'cellcast inbound: no recognised body field');
   }

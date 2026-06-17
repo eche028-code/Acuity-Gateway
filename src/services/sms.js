@@ -35,7 +35,7 @@ function logSms(row) {
     intent: row.intent || null,
     action_status: row.action_status || null,
     error: row.error || null,
-    created_at: new Date().toISOString(),
+    created_at: row.created_at || new Date().toISOString(),
   });
 }
 
@@ -142,6 +142,24 @@ const recentWithPhone = db.prepare(`
 const updateDlrStatus = db.prepare(
   `UPDATE sms_log SET status = @status WHERE direction = 'outbound' AND provider_id = @pid`,
 );
+// Content-based dedup for the poll path: getResponses items carry NO message id,
+// so a reply is "already seen" if a matching inbound row exists near its receive
+// time (catches a reply the webhook already stored). Tight window avoids falsely
+// merging two identical replies sent minutes apart.
+const inboundContentDupe = db.prepare(
+  `SELECT id FROM sms_log WHERE direction = 'inbound' AND recipient = @recipient
+     AND body IS @body AND created_at BETWEEN @from AND @to LIMIT 1`,
+);
+export function inboundAlreadySeen(recipient, body, receivedAtIso) {
+  const n = normalizeAuNumber(recipient) || recipient || null;
+  const t = Date.parse(receivedAtIso || '') || Date.now();
+  return !!inboundContentDupe.get({
+    recipient: n,
+    body: body ?? null,
+    from: new Date(t - 90_000).toISOString(),
+    to: new Date(t + 150_000).toISOString(),
+  });
+}
 
 function correlate(number, nowIso) {
   if (!number) return null;
@@ -186,7 +204,7 @@ export async function forwardInboundToAcuity({ from, body, providerId, intent, b
 
 // Record an inbound reply (MO) or delivery receipt (DLR) from the webhook.
 // Synchronous (no awaits) so the dedupe-check + insert can't interleave.
-export function recordInboundSms({ direction, recipient, status, providerId, body }) {
+export function recordInboundSms({ direction, recipient, status, providerId, body, receivedAt = null }) {
   // Delivery receipts: log, and reflect terminal delivery state on the outbound row.
   if (direction !== 'inbound') {
     if (providerId && status) {
@@ -208,7 +226,7 @@ export function recordInboundSms({ direction, recipient, status, providerId, bod
   const number = normalizeAuNumber(recipient);
   const intent = parseIntent(body);
   const nowIso = new Date().toISOString();
-  const booking = correlate(number, nowIso);
+  const booking = correlate(number, receivedAt || nowIso);
 
   return transaction(() => {
     // STOP → auto-suppress immediately (compliance; the daily reminder job is an
@@ -225,6 +243,7 @@ export function recordInboundSms({ direction, recipient, status, providerId, bod
       body,
       intent,
       action_status: 'open', // surface every reply for staff (never auto-act on bookings)
+      created_at: receivedAt || nowIso, // poll backfill keeps true receive time + thread order
     });
     return { logged: true, intent, bookingId: booking ? booking.id : null, suppressed: intent === 'stop' };
   });

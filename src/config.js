@@ -95,6 +95,8 @@ export const config = {
     // Optional HTTP Basic Auth on the inbound webhook (set in the Cellcast dashboard).
     webhookUser: optional('CELLCAST_WEBHOOK_USER', ''),
     webhookPass: optional('CELLCAST_WEBHOOK_PASS', ''),
+    // Poll interval (ms) for the getResponses inbound safety-net. 0 disables polling.
+    inboundPollMs: int('SMS_INBOUND_POLL_MS', 60_000),
     // Send a confirmation SMS on booking when a key is configured.
     get enabled() {
       return !!this.apiKey;

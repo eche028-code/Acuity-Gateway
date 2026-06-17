@@ -24,6 +24,7 @@ import { refreshAvailability } from './services/availability.js';
 import { checkHealth, pollChanges } from './services/sync.js';
 import { runPurgeIfDue } from './services/purge.js';
 import { runRemindersIfDue } from './services/reminders.js';
+import { pollInboundReplies } from './services/inbound-poll.js';
 
 migrate();
 
@@ -106,6 +107,13 @@ const server = app.listen(config.port, async () => {
   setInterval(() => {
     pollChanges().catch((err) => logger.warn({ err: err.message }, 'changes poll failed'));
   }, 20_000);
+
+  // Poll Cellcast for inbound SMS replies (safety net for missed webhooks).
+  if (config.cellcast.inboundPollMs > 0) {
+    setInterval(() => {
+      pollInboundReplies().catch((err) => logger.warn({ err: err.message }, 'inbound poll failed'));
+    }, config.cellcast.inboundPollMs);
+  }
 
   // Nightly retention purge (runs at most once/day at/after PURGE_HOUR). Check
   // shortly after boot too, in case the box was down when it was due.
