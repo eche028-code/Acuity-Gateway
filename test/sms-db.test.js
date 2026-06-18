@@ -77,3 +77,62 @@ test('dispatchSms is a no-op (skipped) when SMS is disabled, still logged with b
   assert.equal(row.status, 'skipped');
   assert.equal(row.body, 'hi there');
 });
+
+// ── Hub read API (feeds Acuity's right-rail "SMS" hub over /internal) ──
+// These tests clear sms_log first (the file-level `before` clears once, so rows
+// otherwise accumulate across tests) to assert exact feed contents.
+
+test('hub feed lists inbound newest-first, with unhandledOnly + since filters', () => {
+  db.exec('DELETE FROM sms_log');
+  sms.recordInboundSms({ direction: 'inbound', recipient: '0412000001', status: 'received', providerId: 'feed-1', body: 'first', receivedAt: '2030-01-01T09:00:00.000Z' });
+  sms.recordInboundSms({ direction: 'inbound', recipient: '0412000002', status: 'received', providerId: 'feed-2', body: 'second', receivedAt: '2030-01-01T10:00:00.000Z' });
+
+  const all = sms.listInboundFeed();
+  assert.equal(all.length, 2);
+  assert.equal(all[0].body, 'second');          // newest first
+  assert.equal(all[0].from, '+61412000002');    // normalized E.164 for patient match
+  assert.equal(all[0].handled, false);
+
+  // Handle the older one → it drops out of the unhandled view + badge count.
+  const firstId = db.prepare(`SELECT id FROM sms_log WHERE provider_id='feed-1'`).get().id;
+  assert.equal(sms.markInboundHandled({ id: firstId }), 1);
+  assert.equal(sms.unhandledInboundCount(), 1);
+
+  const open = sms.listInboundFeed({ unhandledOnly: true });
+  assert.equal(open.length, 1);
+  assert.equal(open[0].body, 'second');
+
+  const since = sms.listInboundFeed({ since: '2030-01-01T09:30:00.000Z' });
+  assert.equal(since.length, 1);
+  assert.equal(since[0].body, 'second');
+});
+
+test('getThread returns the full conversation (in + out) oldest-first; bad number → null', async () => {
+  db.exec('DELETE FROM sms_log');
+  // Inbound dated in the past so it sorts before the outbound (logged at "now").
+  sms.recordInboundSms({ direction: 'inbound', recipient: '0412777888', status: 'received', providerId: 'thr-1', body: 'inbound one', receivedAt: '2020-02-01T09:00:00.000Z' });
+  // Outbound logs the recipient as given (skipped, SMS disabled) — pass E.164 so it
+  // shares the normalized number the inbound row stored.
+  await sms.dispatchSms({ to: '+61412777888', message: 'reply out', kind: 'staff' });
+
+  const thread = sms.getThread('0412777888');
+  assert.ok(thread);
+  assert.equal(thread.number, '+61412777888');
+  assert.equal(thread.messages.length, 2);
+  assert.equal(thread.messages[0].direction, 'inbound');
+  assert.equal(thread.messages[0].body, 'inbound one');
+  assert.equal(thread.messages[1].direction, 'outbound');
+  assert.equal(thread.messages[1].body, 'reply out');
+
+  assert.equal(sms.getThread('not-a-number'), null);
+});
+
+test('markInboundHandled by number clears all open replies for that patient', () => {
+  db.exec('DELETE FROM sms_log');
+  sms.recordInboundSms({ direction: 'inbound', recipient: '0412555666', status: 'received', providerId: 'mh-1', body: 'one', receivedAt: '2020-03-01T09:00:00.000Z' });
+  sms.recordInboundSms({ direction: 'inbound', recipient: '0412555666', status: 'received', providerId: 'mh-2', body: 'two', receivedAt: '2020-03-01T09:05:00.000Z' });
+  assert.equal(sms.unhandledInboundCount(), 2);
+
+  assert.equal(sms.markInboundHandled({ number: '0412 555 666' }), 2); // normalized match
+  assert.equal(sms.unhandledInboundCount(), 0);
+});

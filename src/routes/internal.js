@@ -10,7 +10,13 @@
 //     interface (nginx allow/deny or a firewall rule), not the public domain.
 import express from 'express';
 import crypto from 'node:crypto';
-import { dispatchSms } from '../services/sms.js';
+import {
+  dispatchSms,
+  listInboundFeed,
+  unhandledInboundCount,
+  getThread,
+  markInboundHandled,
+} from '../services/sms.js';
 import { normalizeAuNumber } from '../sms/cellcast.js';
 import { inboundApiKey, smsEnabled, cellcastSenderId } from '../services/settings.js';
 import { recordAudit } from '../middleware/audit.js';
@@ -66,4 +72,42 @@ internal.post('/sms/send', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// ── SMS hub feed (for Acuity's right-rail "SMS" hub) ────────────────
+// Read-only view of the same inbound data the Gateway /admin "Messages" hub shows.
+// The Acuity hub polls this for new replies and renders an inbox; each row is then
+// deep-linked into the matching patient profile (resolved by `from` → client).
+//
+// Query: ?unhandledOnly=1 (only replies still needing a human — drives the badge),
+//        ?since=<ISO> (only newer than this — incremental poll),
+//        ?limit=<1..200> (default 50).
+internal.get('/sms/inbound', (req, res) => {
+  const unhandledOnly = req.query.unhandledOnly === '1' || req.query.unhandledOnly === 'true';
+  const since = req.query.since ? String(req.query.since) : null;
+  const limit = Number(req.query.limit) || 50;
+  res.json({
+    unhandledCount: unhandledInboundCount(),
+    messages: listInboundFeed({ since, unhandledOnly, limit }),
+  });
+});
+
+// Full conversation (in + out, oldest first) for one patient number — what the
+// patient profile renders. The Gateway is the source of truth, so this includes
+// history + poll-backfilled replies, not just what Acuity has forwarded to itself.
+internal.get('/sms/thread', (req, res) => {
+  const thread = getThread(req.query.number);
+  if (!thread) return res.status(400).json({ error: 'bad_number', message: 'Provide a valid AU mobile in `number`.' });
+  res.json(thread);
+});
+
+// Clear the "needs attention" flag (decrements the hub badge). Call when staff open
+// the conversation. Body: { id } for one reply, or { number } for all of a patient's.
+internal.post('/sms/handled', (req, res) => {
+  const { id, number } = req.body || {};
+  if ((id === undefined || id === null || id === '') && !number) {
+    return res.status(400).json({ error: 'missing_target', message: 'Provide `id` or `number`.' });
+  }
+  const handled = markInboundHandled({ id: id ?? null, number: number ?? null, by: 'acuity' });
+  res.json({ ok: true, handled });
 });

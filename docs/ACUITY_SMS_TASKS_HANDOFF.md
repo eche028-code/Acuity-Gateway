@@ -75,6 +75,9 @@ make the UI robust:
   cancels staff-driven for now.
 
 ## Related docs
+- `docs/ACUITY_SMS_HUB_HANDOFF.md` — **the right-rail "SMS" hub** (received-SMS inbox +
+  click-through to the patient profile). Reads inbound/threads from the Gateway, so it
+  makes Task 1 **optional** for the hub. Tasks 2 & 3 patterns apply there too.
 - `docs/ACUITY_INBOUND_SMS_HANDOFF.md` — inbound endpoint contract (Task 1).
 - `docs/ACUITY_OUTBOUND_SMS_HANDOFF.md` — Gateway send relay (Task 3).
 - `docs/ACUITY_API_HANDOFF.md` — base Gateway↔Acuity contract.

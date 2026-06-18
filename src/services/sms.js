@@ -248,3 +248,100 @@ export function recordInboundSms({ direction, recipient, status, providerId, bod
     return { logged: true, intent, bookingId: booking ? booking.id : null, suppressed: intent === 'stop' };
   });
 }
+
+// ── Hub read API ────────────────────────────────────────────────────
+// The same inbound-SMS data the /admin "Messages" hub renders, exposed as plain
+// functions so it can ALSO be served over the Bearer-gated /internal API to the
+// clinic's Acuity instance (its right-rail "SMS" hub pulls from here, then deep-
+// links each message into the matching patient profile). Single source of truth:
+// every inbound reply (webhook + poll backfill + history) lives in sms_log.
+
+// Recent inbound replies, newest first. Joins the best-effort booking match so a
+// portal/queued patient shows a name; front-desk numbers come through unnamed and
+// Acuity resolves them to a client by phone. `@since`/`@unhandledOnly` are optional
+// filters (poll-for-new / "needs attention" badge); both off → the full feed.
+const selectInboundFeed = db.prepare(`
+  SELECT s.id, s.recipient AS number, s.body, s.intent, s.action_status, s.created_at,
+         s.booking_id, b.first_name, b.last_name, b.appointment_datetime
+  FROM sms_log s
+  LEFT JOIN pending_bookings b ON b.id = s.booking_id
+  WHERE s.direction='inbound'
+    AND (@unhandledOnly = 0 OR s.action_status='open')
+    AND (@since IS NULL OR s.created_at > @since)
+  ORDER BY s.created_at DESC, s.id DESC
+  LIMIT @limit
+`);
+const countUnhandledInbound = db.prepare(
+  `SELECT COUNT(*) AS n FROM sms_log WHERE direction='inbound' AND action_status='open'`,
+);
+
+export function unhandledInboundCount() {
+  return countUnhandledInbound.get().n;
+}
+
+export function listInboundFeed({ since = null, unhandledOnly = false, limit = 50 } = {}) {
+  const rows = selectInboundFeed.all({
+    since: since || null,
+    unhandledOnly: unhandledOnly ? 1 : 0,
+    limit: Math.min(Math.max(Number(limit) || 50, 1), 200),
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    from: r.number, // normalized E.164 — Acuity matches this to a patient/profile
+    body: r.body,
+    intent: r.intent,
+    receivedAt: r.created_at,
+    handled: r.action_status !== 'open',
+    bookingId: r.booking_id || null,
+    patient:
+      r.first_name || r.last_name
+        ? { firstName: r.first_name || null, lastName: r.last_name || null }
+        : null,
+    appointmentAt: r.appointment_datetime || null,
+  }));
+}
+
+// Full conversation (in + out) for one number, oldest first — what the patient
+// profile shows. Returns null for an unparseable number.
+const selectThreadByNumber = db.prepare(`
+  SELECT id, direction, status, body, intent, created_at
+  FROM sms_log
+  WHERE recipient = ? AND direction IN ('inbound','outbound')
+  ORDER BY created_at ASC, id ASC
+  LIMIT 500
+`);
+
+export function getThread(number) {
+  const n = normalizeAuNumber(number);
+  if (!n) return null;
+  const messages = selectThreadByNumber.all(n).map((m) => ({
+    id: m.id,
+    direction: m.direction,
+    body: m.body,
+    intent: m.intent,
+    status: m.status,
+    createdAt: m.created_at,
+  }));
+  return { number: n, messages };
+}
+
+// Clear the "needs attention" flag — e.g. when staff open the patient/conversation
+// from the hub. By id (one reply) or by number (all open replies for that patient).
+const handleInboundById = db.prepare(
+  `UPDATE sms_log SET action_status='handled', handled_at=@now, handled_by=@by
+     WHERE id=@id AND direction='inbound' AND action_status='open'`,
+);
+const handleInboundByNumber = db.prepare(
+  `UPDATE sms_log SET action_status='handled', handled_at=@now, handled_by=@by
+     WHERE recipient=@number AND direction='inbound' AND action_status='open'`,
+);
+
+export function markInboundHandled({ id = null, number = null, by = 'acuity' } = {}) {
+  const now = new Date().toISOString();
+  if (id !== null && id !== undefined && id !== '') {
+    return handleInboundById.run({ id: Number(id), now, by }).changes;
+  }
+  const n = normalizeAuNumber(number);
+  if (!n) return 0;
+  return handleInboundByNumber.run({ number: n, now, by }).changes;
+}
