@@ -430,5 +430,60 @@ $('#int-genkey-btn').addEventListener('click', async () => {
 });
 $('#int-genkey-value').addEventListener('focus', (e) => e.target.select());
 
+// ── Appointment types (which show on the public booking page) ───────
+async function loadTypes() {
+  const box = $('#types-list');
+  box.replaceChildren(el('div', 'muted', 'Loading…'));
+  $('#types-msg').hidden = true;
+  try {
+    const { appointmentTypes } = await api('/appointment-types');
+    renderTypeToggles(appointmentTypes);
+  } catch (err) {
+    if (err.status === 401 || err.status === 403) return showLogin();
+    box.replaceChildren(el('div', 'error', 'Could not load appointment types.'));
+  }
+}
+
+function renderTypeToggles(types) {
+  const box = $('#types-list');
+  if (!types.length) {
+    box.replaceChildren(el('div', 'empty', 'No appointment types loaded yet — they appear after the first Acuity sync.'));
+    return;
+  }
+  const list = el('div', 'types');
+  for (const t of types) {
+    const row = el('label', 'type-row');
+    const cb = el('input', 'type-row__cb');
+    cb.type = 'checkbox';
+    cb.checked = !t.hidden; // checked = visible to patients
+    cb.addEventListener('change', () => toggleType(t.id, !cb.checked, cb));
+    const meta = el('div', 'type-row__meta');
+    meta.append(el('span', 'type-row__name', t.name));
+    if (t.duration) meta.append(el('span', 'type-row__sub', `${t.duration} min`));
+    row.append(cb, meta);
+    list.append(row);
+  }
+  box.replaceChildren(list);
+}
+
+async function toggleType(id, hidden, cb) {
+  const msg = $('#types-msg');
+  const show = (text, ok) => { msg.textContent = text; msg.className = ok ? 'ok-text' : 'error'; msg.hidden = false; };
+  try {
+    await api(`/appointment-types/${encodeURIComponent(id)}/visibility`, { method: 'POST', body: { hidden } });
+    show(hidden ? 'Hidden from the booking page.' : 'Now visible on the booking page.', true);
+  } catch (err) {
+    cb.checked = !cb.checked; // revert the optimistic toggle
+    if (err.status === 401 || err.status === 403) return showLogin();
+    show('Could not save — try again.', false);
+  }
+}
+
+$('#types-btn').addEventListener('click', () => {
+  const p = $('#types-panel');
+  p.hidden = !p.hidden;
+  if (!p.hidden) loadTypes();
+});
+
 // Decide initial view by probing a gated endpoint.
 api('/metrics').then(showDash).catch(showLogin);

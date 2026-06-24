@@ -14,6 +14,7 @@ const KEY = {
   cellcastApiKey: 'cfg:cellcast_api_key',
   cellcastSenderId: 'cfg:cellcast_sender_id',
   inboundApiKey: 'cfg:gateway_inbound_api_key',
+  hiddenApptTypes: 'cfg:hidden_appointment_type_ids',
 };
 
 const delState = db.prepare('DELETE FROM system_state WHERE key = ?');
@@ -35,10 +36,40 @@ export function cellcastApiBase() { return config.cellcast.apiBase; } // base st
 export function smsEnabled() { return !!cellcastApiKey(); }
 export function inboundApiKey() { return dbVal(KEY.inboundApiKey) ?? (config.gateway.inboundApiKey || null); }
 
+// Appointment types the admin has hidden from the public booking portal.
+// Stored as a JSON array of ids; ids are normalised to strings so the set
+// matches regardless of whether Acuity reports ids as numbers or strings.
+// Default = none hidden (all visible), so a newly-added Acuity type shows up
+// automatically until it's explicitly switched off.
+export function hiddenAppointmentTypeIds() {
+  const raw = dbVal(KEY.hiddenApptTypes);
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
 // ── Setters (admin) ─────────────────────────────────────────────────
 export function setCellcastApiKey(v) { setOrClear(KEY.cellcastApiKey, v); }
 export function setCellcastSenderId(v) { setOrClear(KEY.cellcastSenderId, v); }
 export function setInboundApiKey(v) { setOrClear(KEY.inboundApiKey, v); }
+
+// Toggle one appointment type's portal visibility. hidden=true hides it; false
+// re-shows it. Read-modify-write on the stored set (single admin → no races).
+// Returns the resulting hidden-id list.
+export function setAppointmentTypeHidden(id, hidden) {
+  const key = String(id).trim();
+  if (!key) return hiddenAppointmentTypeIds();
+  const set = new Set(hiddenAppointmentTypeIds());
+  if (hidden) set.add(key);
+  else set.delete(key);
+  const list = [...set];
+  setOrClear(KEY.hiddenApptTypes, list.length ? JSON.stringify(list) : '');
+  return list;
+}
 
 // ── Masked status for the admin UI (never returns full secrets) ─────
 function source(dbKey, envVal) {

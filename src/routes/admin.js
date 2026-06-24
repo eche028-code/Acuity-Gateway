@@ -29,7 +29,10 @@ import {
   setCellcastApiKey,
   setCellcastSenderId,
   setInboundApiKey,
+  hiddenAppointmentTypeIds,
+  setAppointmentTypeHidden,
 } from '../services/settings.js';
+import { getAppointmentTypes } from '../services/availability.js';
 
 export const admin = express.Router();
 const here = dirname(fileURLToPath(import.meta.url));
@@ -260,6 +263,29 @@ admin.post('/api/settings/test-sms', requireAdmin, async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// ── Booking portal: which appointment types are publicly bookable ───
+// The admin can hide a type from the public booking page without changing
+// anything in Acuity. Hidden types are filtered out of GET /appointment-types
+// on the portal side; here the admin sees the full list with each type's flag.
+admin.get('/api/appointment-types', requireAdmin, (_req, res) => {
+  const hidden = new Set(hiddenAppointmentTypeIds());
+  const appointmentTypes = getAppointmentTypes().map((t) => ({
+    id: t.id,
+    name: t.name,
+    duration: t.duration ?? null,
+    hidden: hidden.has(String(t.id)),
+  }));
+  res.json({ appointmentTypes });
+});
+
+admin.post('/api/appointment-types/:id/visibility', requireAdmin, (req, res) => {
+  const id = String(req.params.id);
+  const hidden = !!(req.body || {}).hidden;
+  setAppointmentTypeHidden(id, hidden);
+  recordAudit({ event_type: 'settings', actor: 'admin', ip: req.ip, success: true, detail: { appointmentType: id, hidden } });
+  res.json({ ok: true, hiddenAppointmentTypeIds: hiddenAppointmentTypeIds() });
 });
 
 // ── Static shell (unauthenticated; data comes from the gated APIs) ──

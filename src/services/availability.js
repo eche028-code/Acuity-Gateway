@@ -8,6 +8,7 @@ import { db, getState, setState, transaction } from '../db/index.js';
 import { config } from '../config.js';
 import { acuity, AcuityError } from '../acuity/client.js';
 import { setAcuityStatus } from './status.js';
+import { hiddenAppointmentTypeIds } from './settings.js';
 import { logger } from '../lib/logger.js';
 
 const MAX_RANGE_DAYS = 62; // Acuity's availability range cap
@@ -93,6 +94,14 @@ export function openSlot(appointmentTypeId, datetime) {
 export function getAppointmentTypes() {
   const raw = getState('appointment_types');
   return raw ? JSON.parse(raw) : [];
+}
+// Public portal view: the cached types minus any the admin has hidden
+// (see settings.hiddenAppointmentTypeIds). We filter at read time — not at
+// cache/refresh time — so un-hiding a type takes effect instantly and we keep
+// availability cached for every active type regardless of visibility.
+export function getVisibleAppointmentTypes() {
+  const hidden = new Set(hiddenAppointmentTypeIds());
+  return getAppointmentTypes().filter((t) => !hidden.has(String(t.id)));
 }
 export function getOpenDates(appointmentTypeId, from, to, practitionerId = '') {
   const rows = practitionerId

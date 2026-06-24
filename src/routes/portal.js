@@ -8,7 +8,7 @@ import express from 'express';
 import { issueToken } from '../lib/token.js';
 import { requireSession, searchRateLimit, bookingRateLimit } from '../middleware/security.js';
 import {
-  getAppointmentTypes,
+  getVisibleAppointmentTypes,
   getOpenDates,
   getOpenTimes,
   getDaySummaries,
@@ -28,7 +28,7 @@ portal.post('/session', (_req, res) => {
 
 // ── Public, non-PII reads ───────────────────────────────────────────
 portal.get('/appointment-types', (_req, res) => {
-  res.json({ appointmentTypes: getAppointmentTypes() });
+  res.json({ appointmentTypes: getVisibleAppointmentTypes() });
 });
 
 portal.get('/practitioners', (_req, res) => {
