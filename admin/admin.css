@@ -156,6 +156,16 @@ tr:last-child td { border-bottom: 0; }
   cursor: pointer; accent-color: var(--brand); vertical-align: middle;
 }
 
+/* Embed-snippet panel */
+#embed-panel { max-width: 640px; display: flex; flex-direction: column; gap: 12px; }
+.embed__field { display: flex; align-items: center; gap: 10px; }
+.embed__field input { width: 110px; }
+.embed__code {
+  width: 100%; font-size: 12px; line-height: 1.45; resize: vertical;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--fg);
+}
+
 /* Integrations panel */
 #int-panel { max-width: 480px; }
 .int-block { padding: 14px 0; border-top: 1px solid var(--line); }

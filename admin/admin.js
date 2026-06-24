@@ -62,7 +62,7 @@ function showTab(name) {
     btn.setAttribute('aria-selected', t === name ? 'true' : 'false');
   }
   // Lazily load the data a tab owns but loadAll() doesn't fetch.
-  if (name === 'appointments') loadTypes();
+  if (name === 'appointments') { loadTypes(); renderEmbed(); }
   if (name === 'sms') loadSettings();
 }
 
@@ -511,6 +511,36 @@ async function saveDescription(id, value, btn, msg) {
     btn.disabled = false;
   }
 }
+
+// ── Embed snippet ───────────────────────────────────────────────────
+// The portal lives at this admin page's own origin (e.g.
+// https://book.waeyecare.com.au), so build the iframe src from it — no
+// hard-coded domain to drift. CSP frame-ancestors still gates who may embed.
+function renderEmbed() {
+  const ta = $('#embed-code');
+  if (!ta) return;
+  const h = Math.min(3000, Math.max(300, parseInt($('#embed-height').value, 10) || 900));
+  ta.value =
+    `<iframe src="${window.location.origin}"\n` +
+    `        title="Book an appointment"\n` +
+    `        style="width:100%;height:${h}px;border:0;display:block;" loading="lazy"></iframe>`;
+}
+
+$('#embed-height').addEventListener('input', renderEmbed);
+$('#embed-copy-btn').addEventListener('click', async () => {
+  const msg = $('#embed-msg');
+  const ta = $('#embed-code');
+  try {
+    await navigator.clipboard.writeText(ta.value);
+    msg.className = 'ok-text';
+    msg.textContent = 'Copied ✓';
+  } catch {
+    // Clipboard API blocked (e.g. non-HTTPS) — fall back to selecting the text.
+    ta.focus(); ta.select();
+    msg.className = 'muted';
+    msg.textContent = 'Press ⌘/Ctrl-C to copy.';
+  }
+});
 
 async function toggleType(id, hidden, cb) {
   const msg = $('#types-msg');
