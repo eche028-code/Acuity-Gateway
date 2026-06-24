@@ -103,6 +103,20 @@ export function getVisibleAppointmentTypes() {
   const hidden = new Set(hiddenAppointmentTypeIds());
   return getAppointmentTypes().filter((t) => !hidden.has(String(t.id)));
 }
+
+// The trimmed shape we cache + serve to the portal. `description` is Acuity's
+// per-type explainer (optional in the contract) — carried through so the portal
+// can show it on hover/tap. A missing or blank description becomes null so the
+// frontend can simply test for truthiness.
+export function slimAppointmentType(t) {
+  const description = typeof t.description === 'string' && t.description.trim() ? t.description.trim() : null;
+  return {
+    id: t.id,
+    name: t.name,
+    duration: t.durationMinutes ?? t.duration ?? null,
+    description,
+  };
+}
 export function getOpenDates(appointmentTypeId, from, to, practitionerId = '') {
   const rows = practitionerId
     ? selectOpenDatesP.all(appointmentTypeId, from, to, practitionerId)
@@ -173,7 +187,7 @@ export async function refreshAvailability() {
     const types = (typesResp && typesResp.appointmentTypes) || [];
     const slimTypes = types
       .filter((t) => t.active !== false)
-      .map((t) => ({ id: t.id, name: t.name, duration: t.durationMinutes ?? t.duration ?? null }));
+      .map(slimAppointmentType);
     const practitioners = ((typesResp && typesResp.practitioners) || []).map((p) => ({ id: p.id, name: p.name }));
 
     // Pull each practitioner's diary separately so the cache is segmented by

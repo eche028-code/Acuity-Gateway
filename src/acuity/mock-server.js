@@ -20,9 +20,9 @@ const WEBHOOK_SECRET = process.env.ACUITY_WEBHOOK_SECRET || process.env.ACUITY_A
 
 // ── Seed data ───────────────────────────────────────────────────────
 const appointmentTypes = [
-  { id: 1, name: 'Initial Consultation', duration: 30, calendarIDs: [1] },
-  { id: 2, name: 'Follow-up Appointment', duration: 15, calendarIDs: [1] },
-  { id: 3, name: 'Telehealth Consult', duration: 20, calendarIDs: [1] },
+  { id: 1, name: 'Initial Consultation', duration: 30, calendarIDs: [1], description: 'A thorough first visit — full history and baseline checks. Please allow extra time.' },
+  { id: 2, name: 'Follow-up Appointment', duration: 15, calendarIDs: [1], description: 'A shorter review of an existing issue or ongoing treatment.' },
+  { id: 3, name: 'Telehealth Consult', duration: 20, calendarIDs: [1], description: 'A video consultation — a secure link is sent by SMS beforehand.' },
 ];
 
 // A couple of existing patients so phone/name lookup can be demonstrated.

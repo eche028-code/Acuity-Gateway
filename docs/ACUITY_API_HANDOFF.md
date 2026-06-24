@@ -62,6 +62,7 @@ The bookable services, for the portal.
     {
       "id": "1",
       "name": "Initial Eye Exam",
+      "description": "Comprehensive first visit — bring current glasses and any referral.",
       "durationMinutes": 30,
       "active": true,
       "practitionerIds": ["1", "2"]      // who offers this type (optional)
@@ -72,6 +73,10 @@ The bookable services, for the portal.
   ]
 }
 ```
+`description` is **optional** — pass through the appointment type's Description
+field from Acuity if it's set. The portal shows it as a hover/tap explainer on
+each option; omit it (or send empty/null) and the portal simply shows no
+explainer for that type.
 
 ### 3.3 `GET /availability`
 Open slots the Gateway can render and cache.

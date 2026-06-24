@@ -59,6 +59,7 @@ body {
 .options--compact { flex-direction: column; max-height: 230px; overflow-y: auto; }
 
 .option {
+  position: relative;
   text-align: left; cursor: pointer;
   border: 1px solid var(--line); background: #fff; color: var(--fg);
   border-radius: var(--radius); padding: 10px 14px; font-size: 14px;
@@ -68,6 +69,26 @@ body {
 .option.is-active { border-color: var(--brand); background: #eef4ff; }
 .option__name { font-weight: 600; }
 .option__meta { color: var(--muted); font-size: 12px; }
+
+/* Appointment-type explainer: a small info badge + a popover with Acuity's
+   description. Revealed on option hover (desktop) or when the badge is tapped
+   (mobile, via .is-info-open). Absolute so it never reflows the option grid. */
+.option__head { display: flex; align-items: center; gap: 6px; }
+.option__info {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 1px solid var(--brand); color: var(--brand);
+  font: italic 700 11px/1 Georgia, "Times New Roman", serif; cursor: help;
+}
+.option__desc {
+  display: none; position: absolute; top: 100%; left: 0; z-index: 30;
+  width: max-content; max-width: 260px; margin-top: 4px;
+  padding: 8px 10px; background: #fff; color: var(--fg);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(20, 30, 45, .16);
+  font-size: 13px; font-weight: 400; line-height: 1.45; white-space: normal;
+}
+.option:hover .option__desc, .option.is-info-open .option__desc { display: block; }
 
 .slot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 @media (max-width: 520px) { .slot-grid { grid-template-columns: 1fr; } }

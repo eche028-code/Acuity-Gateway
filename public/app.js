@@ -200,12 +200,32 @@ function renderTypes() {
   for (const t of state.types) {
     const btn = el('button', 'option');
     btn.type = 'button';
-    btn.append(el('span', 'option__name', t.name));
+    const head = el('span', 'option__head');
+    head.append(el('span', 'option__name', t.name));
+    if (t.description) {
+      // Acuity's explainer for this type. Shown on hover (desktop) and on tap of
+      // the ⓘ (mobile) — the icon's click toggles it without selecting the type.
+      const info = el('span', 'option__info', 'i');
+      info.setAttribute('aria-label', 'About this appointment type');
+      info.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const wasOpen = btn.classList.contains('is-info-open');
+        closeAllTypeInfo();
+        if (!wasOpen) btn.classList.add('is-info-open');
+      });
+      head.append(info);
+    }
+    btn.append(head);
     if (t.duration) btn.append(el('span', 'option__meta', `${t.duration} min appointment`));
+    if (t.description) btn.append(el('span', 'option__desc', t.description));
     if (t.id === state.typeId) btn.classList.add('is-active');
     btn.addEventListener('click', () => selectType(t));
     list.append(btn);
   }
+}
+
+function closeAllTypeInfo() {
+  for (const o of document.querySelectorAll('.option.is-info-open')) o.classList.remove('is-info-open');
 }
 
 function selectType(t) {
