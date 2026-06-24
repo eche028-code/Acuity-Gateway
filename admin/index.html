@@ -26,110 +26,135 @@
         </div>
         <div class="topbar__actions">
           <span id="updated" class="muted"></span>
-          <button id="sync-btn" class="btn btn--ghost" type="button">Replay queue</button>
-          <button id="purge-btn" class="btn btn--ghost" type="button">Run purge</button>
-          <button id="types-btn" class="btn btn--ghost" type="button">Appointment types</button>
-          <button id="int-btn" class="btn btn--ghost" type="button">Integrations</button>
-          <button id="pw-btn" class="btn btn--ghost" type="button">Change password</button>
           <button id="logout-btn" class="btn btn--ghost" type="button">Sign out</button>
         </div>
       </header>
 
+      <nav class="tabs" role="tablist">
+        <button class="tab" id="tab-btn-appointments" type="button" role="tab" data-tab="appointments">Appointments</button>
+        <button class="tab" id="tab-btn-sms" type="button" role="tab" data-tab="sms">SMS Integration</button>
+        <button class="tab" id="tab-btn-admin" type="button" role="tab" data-tab="admin">Admin</button>
+      </nav>
+
       <div class="wrap">
-        <div id="pw-panel" class="pw-panel" hidden>
-          <form id="pw-form">
-            <h3>Change admin password</h3>
-            <input id="pw-current" type="password" placeholder="Current password" autocomplete="current-password" required />
-            <input id="pw-new" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password" required />
-            <input id="pw-confirm" type="password" placeholder="Confirm new password" autocomplete="new-password" required />
-            <div class="pw-panel__actions">
-              <button class="btn" type="submit">Save new password</button>
-              <button id="pw-cancel" class="btn btn--ghost" type="button">Cancel</button>
-            </div>
-            <p id="pw-msg" hidden></p>
-          </form>
-        </div>
 
-        <div id="int-panel" class="pw-panel" hidden>
-          <h3>Integrations</h3>
-
-          <div class="int-block">
-            <h4>Cellcast SMS (Gateway → Cellcast)</h4>
-            <p id="int-cellcast-status" class="muted">…</p>
-            <form id="int-cellcast-form">
-              <input id="int-cellcast-key" type="password" placeholder="Cellcast API key (blank = keep current)" autocomplete="off" />
-              <input id="int-cellcast-sender" type="text" placeholder="Sender ID / number (blank = shared number)" autocomplete="off" />
-              <div class="pw-panel__actions">
-                <button class="btn" type="submit">Save Cellcast settings</button>
-              </div>
-              <p id="int-cellcast-msg" hidden></p>
-            </form>
-            <div class="int-test">
-              <input id="int-test-to" type="text" placeholder="Test mobile e.g. 0404…" autocomplete="off" />
-              <button id="int-test-btn" class="btn btn--ghost btn--sm" type="button">Send test SMS</button>
-              <span id="int-test-msg" class="muted"></span>
-            </div>
+        <!-- ============ TAB: Appointments ============ -->
+        <div id="tab-appointments" class="tab-panel" role="tabpanel">
+          <div class="section-head">
+            <h2>Status</h2>
+            <button id="sync-btn" class="btn btn--ghost btn--sm" type="button">Replay queue</button>
           </div>
+          <div id="metrics-appointments" class="cards"></div>
 
-          <div class="int-block">
-            <h4>Acuity access key (Acuity → Gateway)</h4>
-            <p id="int-inbound-status" class="muted">…</p>
-            <div class="pw-panel__actions">
-              <button id="int-genkey-btn" class="btn btn--ghost" type="button">Generate new key</button>
-            </div>
-            <div id="int-genkey-reveal" hidden>
-              <p class="muted">Copy this into Acuity now — it won't be shown again:</p>
-              <input id="int-genkey-value" type="text" readonly />
-            </div>
-          </div>
-        </div>
-
-        <div id="types-panel" class="pw-panel" hidden>
-          <h3>Booking page — appointment types</h3>
+          <h2>Booking page — appointment types</h2>
           <p class="muted">Switch a type off to hide it from the public booking page — patients won't see it or be able to book it online. New Acuity types appear here automatically and start visible. Changes take effect immediately.</p>
           <div id="types-list"></div>
           <p id="types-msg" hidden></p>
+
+          <h2>Reconciliation <span id="recon-count" class="pill"></span></h2>
+          <p class="muted">Slot collisions surfaced for confirmation — resolved manually, never auto-merged.</p>
+          <div id="reconciliation"></div>
+
+          <h2>Outage queue <span id="queue-count" class="pill"></span></h2>
+          <div id="queue"></div>
         </div>
 
-        <h2>Status</h2>
-        <div id="metrics" class="cards"></div>
+        <!-- ============ TAB: SMS Integration ============ -->
+        <div id="tab-sms" class="tab-panel" role="tabpanel" hidden>
+          <h2>Status</h2>
+          <div id="metrics-sms" class="cards"></div>
 
-        <h2>Reconciliation <span id="recon-count" class="pill"></span></h2>
-        <p class="muted">Slot collisions surfaced for confirmation — resolved manually, never auto-merged.</p>
-        <div id="reconciliation"></div>
-
-        <h2>Outage queue <span id="queue-count" class="pill"></span></h2>
-        <div id="queue"></div>
-
-        <h2>Messages <span id="sms-actions-count" class="pill"></span></h2>
-        <p class="muted">Inbound replies are surfaced for staff — the Gateway never auto-cancels. A STOP auto-suppresses future SMS; everything else waits here for a human.</p>
-        <div class="sms">
-          <div class="sms__list">
-            <h3>Needs attention</h3>
-            <div id="sms-actions"></div>
-            <h3>Conversations</h3>
-            <div id="sms-threads"></div>
-          </div>
-          <div class="sms__pane">
-            <div class="sms__pane-head">
-              <h3 id="sms-thread-title">Select a conversation</h3>
-              <button id="sms-suppress-btn" class="btn btn--sm btn--ghost" type="button" hidden></button>
-            </div>
-            <div id="sms-thread" class="sms__thread">
-              <div class="empty">Pick a conversation or an item that needs attention.</div>
-            </div>
-            <form id="sms-send" class="sms__send" hidden>
-              <textarea id="sms-text" rows="2" maxlength="1000" placeholder="Type a reply…"></textarea>
-              <div class="sms__send-row">
-                <button class="btn" type="submit">Send</button>
-                <span id="sms-send-msg" class="muted"></span>
+          <h2>Provider &amp; keys</h2>
+          <div id="int-panel" class="pw-panel">
+            <div class="int-block">
+              <h4>Cellcast SMS (Gateway → Cellcast)</h4>
+              <p id="int-cellcast-status" class="muted">…</p>
+              <form id="int-cellcast-form">
+                <input id="int-cellcast-key" type="password" placeholder="Cellcast API key (blank = keep current)" autocomplete="off" />
+                <input id="int-cellcast-sender" type="text" placeholder="Sender ID / number (blank = shared number)" autocomplete="off" />
+                <div class="pw-panel__actions">
+                  <button class="btn" type="submit">Save Cellcast settings</button>
+                </div>
+                <p id="int-cellcast-msg" hidden></p>
+              </form>
+              <div class="int-test">
+                <input id="int-test-to" type="text" placeholder="Test mobile e.g. 0404…" autocomplete="off" />
+                <button id="int-test-btn" class="btn btn--ghost btn--sm" type="button">Send test SMS</button>
+                <span id="int-test-msg" class="muted"></span>
               </div>
+            </div>
+
+            <div class="int-block">
+              <h4>Acuity access key (Acuity → Gateway)</h4>
+              <p id="int-inbound-status" class="muted">…</p>
+              <div class="pw-panel__actions">
+                <button id="int-genkey-btn" class="btn btn--ghost" type="button">Generate new key</button>
+              </div>
+              <div id="int-genkey-reveal" hidden>
+                <p class="muted">Copy this into Acuity now — it won't be shown again:</p>
+                <input id="int-genkey-value" type="text" readonly />
+              </div>
+            </div>
+          </div>
+
+          <h2>Messages <span id="sms-actions-count" class="pill"></span></h2>
+          <p class="muted">Inbound replies are surfaced for staff — the Gateway never auto-cancels. A STOP auto-suppresses future SMS; everything else waits here for a human.</p>
+          <div class="sms">
+            <div class="sms__list">
+              <h3>Needs attention</h3>
+              <div id="sms-actions"></div>
+              <h3>Conversations</h3>
+              <div id="sms-threads"></div>
+            </div>
+            <div class="sms__pane">
+              <div class="sms__pane-head">
+                <h3 id="sms-thread-title">Select a conversation</h3>
+                <button id="sms-suppress-btn" class="btn btn--sm btn--ghost" type="button" hidden></button>
+              </div>
+              <div id="sms-thread" class="sms__thread">
+                <div class="empty">Pick a conversation or an item that needs attention.</div>
+              </div>
+              <form id="sms-send" class="sms__send" hidden>
+                <textarea id="sms-text" rows="2" maxlength="1000" placeholder="Type a reply…"></textarea>
+                <div class="sms__send-row">
+                  <button class="btn" type="submit">Send</button>
+                  <span id="sms-send-msg" class="muted"></span>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ TAB: Admin ============ -->
+        <div id="tab-admin" class="tab-panel" role="tabpanel" hidden>
+          <h2>Status</h2>
+          <div id="metrics-admin" class="cards"></div>
+
+          <h2>Change admin password</h2>
+          <div id="pw-panel" class="pw-panel">
+            <form id="pw-form">
+              <input id="pw-current" type="password" placeholder="Current password" autocomplete="current-password" required />
+              <input id="pw-new" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password" required />
+              <input id="pw-confirm" type="password" placeholder="Confirm new password" autocomplete="new-password" required />
+              <div class="pw-panel__actions">
+                <button class="btn" type="submit">Save new password</button>
+              </div>
+              <p id="pw-msg" hidden></p>
             </form>
           </div>
+
+          <h2>Maintenance</h2>
+          <div class="pw-panel">
+            <p class="muted">Run the retention purge now — removes synced, past-appointment PII per policy. This runs automatically; use the button to run it on demand.</p>
+            <div class="pw-panel__actions">
+              <button id="purge-btn" class="btn btn--ghost" type="button">Run purge</button>
+            </div>
+          </div>
+
+          <h2>Recent activity</h2>
+          <div id="audit"></div>
         </div>
 
-        <h2>Recent activity</h2>
-        <div id="audit"></div>
       </div>
     </section>
 

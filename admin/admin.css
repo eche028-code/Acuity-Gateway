@@ -42,6 +42,24 @@ body {
 .topbar__actions { display: flex; align-items: center; gap: 8px; }
 .wrap { max-width: 1000px; margin: 0 auto; padding: 20px; }
 .wrap h2 { font-size: 16px; margin: 26px 0 10px; }
+.wrap .tab-panel > h2:first-child,
+.wrap .tab-panel > .section-head:first-child h2 { margin-top: 6px; }
+
+/* Tab bar */
+.tabs {
+  background: var(--card); border-bottom: 1px solid var(--line);
+  padding: 0 20px; display: flex; gap: 4px;
+  position: sticky; top: 49px; z-index: 9;
+}
+.tab {
+  border: 0; background: none; cursor: pointer; font: inherit; font-weight: 600;
+  color: var(--muted); padding: 13px 14px; border-bottom: 2px solid transparent;
+}
+.tab:hover { color: var(--fg); }
+.tab.is-active { color: var(--brand); border-bottom-color: var(--brand); }
+
+/* A heading row with an action button on the right */
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
 /* Inputs & buttons */
 input {
@@ -121,16 +139,22 @@ tr:last-child td { border-bottom: 0; }
 .pw-panel p { margin: 2px 0 0; }
 .pw-panel__actions { display: flex; gap: 8px; }
 
-/* Appointment-type visibility panel */
-#types-panel { max-width: 480px; }
-#types-panel #types-msg { margin: 10px 0 0; }
-.types { display: flex; flex-direction: column; margin-top: 4px; }
-.type-row { display: flex; align-items: center; gap: 12px; padding: 11px 4px; border-top: 1px solid var(--line); cursor: pointer; }
-.type-row:first-child { border-top: 0; }
-.type-row__cb { width: 18px; height: 18px; flex: none; padding: 0; border: 0; cursor: pointer; accent-color: var(--brand); }
-.type-row__meta { display: flex; flex-direction: column; line-height: 1.3; }
-.type-row__name { font-weight: 600; }
-.type-row__sub { font-size: 12px; color: var(--muted); }
+/* Appointment-type visibility table */
+#types-msg { margin: 10px 0 0; }
+.types-table__toggle { width: 64px; text-align: center; }
+.types-table__name { font-weight: 600; }
+.types-table th:nth-child(3), .types-table td:nth-child(3) { white-space: nowrap; }   /* Duration */
+.types-table__desc { color: var(--fg); width: 46%; }
+.types-table__desc-input {
+  width: 100%; min-width: 200px; font: inherit; font-size: 13px;
+  padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; resize: vertical;
+}
+.types-table__desc-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.types-table__desc-msg { font-size: 12px; }
+.type-row__cb {
+  width: 18px; height: 18px; padding: 0; border: 0; margin: 0;
+  cursor: pointer; accent-color: var(--brand); vertical-align: middle;
+}
 
 /* Integrations panel */
 #int-panel { max-width: 480px; }

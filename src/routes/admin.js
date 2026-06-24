@@ -31,6 +31,8 @@ import {
   setInboundApiKey,
   hiddenAppointmentTypeIds,
   setAppointmentTypeHidden,
+  appointmentTypeDescriptions,
+  setAppointmentTypeDescription,
 } from '../services/settings.js';
 import { getAppointmentTypes } from '../services/availability.js';
 
@@ -271,10 +273,13 @@ admin.post('/api/settings/test-sms', requireAdmin, async (req, res, next) => {
 // on the portal side; here the admin sees the full list with each type's flag.
 admin.get('/api/appointment-types', requireAdmin, (_req, res) => {
   const hidden = new Set(hiddenAppointmentTypeIds());
+  const descriptions = appointmentTypeDescriptions();
   const appointmentTypes = getAppointmentTypes().map((t) => ({
     id: t.id,
     name: t.name,
     duration: t.duration ?? null,
+    // The editable value: admin-authored description wins, else Acuity's (if any).
+    description: descriptions[String(t.id)] ?? t.description ?? null,
     hidden: hidden.has(String(t.id)),
   }));
   res.json({ appointmentTypes });
@@ -286,6 +291,18 @@ admin.post('/api/appointment-types/:id/visibility', requireAdmin, (req, res) => 
   setAppointmentTypeHidden(id, hidden);
   recordAudit({ event_type: 'settings', actor: 'admin', ip: req.ip, success: true, detail: { appointmentType: id, hidden } });
   res.json({ ok: true, hiddenAppointmentTypeIds: hiddenAppointmentTypeIds() });
+});
+
+// Set (or clear, when blank) an appointment type's description — shown on the
+// public booking page as the ⓘ explainer. Capped at 1000 chars; the content is
+// not logged (only whether one is now set).
+admin.post('/api/appointment-types/:id/description', requireAdmin, (req, res) => {
+  const id = String(req.params.id);
+  const description = ((req.body || {}).description ?? '').toString();
+  if (description.length > 1000) return res.status(400).json({ error: 'too_long' });
+  setAppointmentTypeDescription(id, description);
+  recordAudit({ event_type: 'settings', actor: 'admin', ip: req.ip, success: true, detail: { appointmentType: id, descriptionSet: !!description.trim() } });
+  res.json({ ok: true });
 });
 
 // ── Static shell (unauthenticated; data comes from the gated APIs) ──

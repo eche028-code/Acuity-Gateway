@@ -15,6 +15,7 @@ const KEY = {
   cellcastSenderId: 'cfg:cellcast_sender_id',
   inboundApiKey: 'cfg:gateway_inbound_api_key',
   hiddenApptTypes: 'cfg:hidden_appointment_type_ids',
+  apptDescriptions: 'cfg:appointment_type_descriptions',
 };
 
 const delState = db.prepare('DELETE FROM system_state WHERE key = ?');
@@ -50,6 +51,33 @@ export function hiddenAppointmentTypeIds() {
   } catch {
     return [];
   }
+}
+
+// Admin-authored descriptions per appointment type (id → text). These supply
+// or override the per-type explainer shown on the booking portal, independent
+// of whether Acuity sends a Description — so staff can write them here. Stored
+// as a JSON object keyed by string id; default = none.
+export function appointmentTypeDescriptions() {
+  const raw = dbVal(KEY.apptDescriptions);
+  if (!raw) return {};
+  try {
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+// Set (or clear, when blank) one type's admin description. Returns the new map.
+export function setAppointmentTypeDescription(id, description) {
+  const key = String(id).trim();
+  if (!key) return appointmentTypeDescriptions();
+  const map = appointmentTypeDescriptions();
+  const val = (description == null ? '' : String(description)).trim();
+  if (val) map[key] = val;
+  else delete map[key];
+  setOrClear(KEY.apptDescriptions, Object.keys(map).length ? JSON.stringify(map) : '');
+  return map;
 }
 
 // ── Setters (admin) ─────────────────────────────────────────────────

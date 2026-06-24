@@ -8,7 +8,7 @@ import { db, getState, setState, transaction } from '../db/index.js';
 import { config } from '../config.js';
 import { acuity, AcuityError } from '../acuity/client.js';
 import { setAcuityStatus } from './status.js';
-import { hiddenAppointmentTypeIds } from './settings.js';
+import { hiddenAppointmentTypeIds, appointmentTypeDescriptions } from './settings.js';
 import { logger } from '../lib/logger.js';
 
 const MAX_RANGE_DAYS = 62; // Acuity's availability range cap
@@ -101,7 +101,11 @@ export function getAppointmentTypes() {
 // availability cached for every active type regardless of visibility.
 export function getVisibleAppointmentTypes() {
   const hidden = new Set(hiddenAppointmentTypeIds());
-  return getAppointmentTypes().filter((t) => !hidden.has(String(t.id)));
+  const descriptions = appointmentTypeDescriptions();
+  return getAppointmentTypes()
+    .filter((t) => !hidden.has(String(t.id)))
+    // An admin-authored description wins; otherwise fall back to Acuity's (if any).
+    .map((t) => ({ ...t, description: descriptions[String(t.id)] ?? t.description ?? null }));
 }
 
 // The trimmed shape we cache + serve to the portal. `description` is Acuity's

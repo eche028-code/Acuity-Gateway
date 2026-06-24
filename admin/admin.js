@@ -48,7 +48,22 @@ function showDash() {
   $('#login-view').hidden = true;
   $('#dash-view').hidden = false;
   loadAll();
+  showTab('appointments');
   if (!timer) timer = setInterval(loadAll, 15000);
+}
+
+// ── Tabs ────────────────────────────────────────────────────────────
+const TABS = ['appointments', 'sms', 'admin'];
+function showTab(name) {
+  for (const t of TABS) {
+    $('#tab-' + t).hidden = t !== name;
+    const btn = $('#tab-btn-' + t);
+    btn.classList.toggle('is-active', t === name);
+    btn.setAttribute('aria-selected', t === name ? 'true' : 'false');
+  }
+  // Lazily load the data a tab owns but loadAll() doesn't fetch.
+  if (name === 'appointments') loadTypes();
+  if (name === 'sms') loadSettings();
 }
 
 // ── Rendering ───────────────────────────────────────────────────────
@@ -63,17 +78,21 @@ function card(label, value, tone, sub) {
 }
 
 function renderMetrics(m) {
-  const box = $('#metrics');
-  box.replaceChildren(
+  // Cards are filed under the tab they belong to (Appointments / SMS / Admin).
+  $('#metrics-appointments').replaceChildren(
     card('Acuity', m.acuity, m.acuity === 'online' ? 'ok' : 'err'),
     card('Queue depth', m.queueDepth, m.queueDepth > 0 ? 'warn' : null, m.queueDepth ? `oldest ${m.oldestQueuedAgeMins}m` : ''),
     card('Failed syncs', m.failedSyncs, m.failedSyncs > 0 ? 'err' : 'ok'),
     card('Open reconciliations', m.openReconciliations, m.openReconciliations > 0 ? 'err' : 'ok'),
-    card('SMS to action', m.smsActionsOpen, m.smsActionsOpen > 0 ? 'warn' : null, m.smsInbound24h ? `${m.smsInbound24h} in 24h` : ''),
-    card('SMS failures', m.smsFailures, m.smsFailures > 0 ? 'warn' : null),
-    card('Errors (24h)', m.errorsLast24h, m.errorsLast24h > 0 ? 'warn' : null),
     card('Open slots', m.openSlots, null),
     card('Synced bookings', m.totalSynced, null),
+  );
+  $('#metrics-sms').replaceChildren(
+    card('SMS to action', m.smsActionsOpen, m.smsActionsOpen > 0 ? 'warn' : null, m.smsInbound24h ? `${m.smsInbound24h} in 24h` : ''),
+    card('SMS failures', m.smsFailures, m.smsFailures > 0 ? 'warn' : null),
+  );
+  $('#metrics-admin').replaceChildren(
+    card('Errors (24h)', m.errorsLast24h, m.errorsLast24h > 0 ? 'warn' : null),
   );
   $('#updated').textContent = `Acuity last online ${ago(m.lastAcuityOnline)} · refresh ${ago(m.lastAvailabilityRefresh)} · purge ${ago(m.lastPurge)}`;
 }
@@ -310,16 +329,6 @@ $('#purge-btn').addEventListener('click', async () => {
 });
 
 // ── Change password ─────────────────────────────────────────────────
-$('#pw-btn').addEventListener('click', () => {
-  const p = $('#pw-panel');
-  p.hidden = !p.hidden;
-  if (!p.hidden) $('#pw-current').focus();
-});
-$('#pw-cancel').addEventListener('click', () => {
-  $('#pw-form').reset();
-  $('#pw-msg').hidden = true;
-  $('#pw-panel').hidden = true;
-});
 $('#pw-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const msg = $('#pw-msg');
@@ -384,12 +393,6 @@ async function loadSettings() {
   } catch { /* not authed */ }
 }
 
-$('#int-btn').addEventListener('click', () => {
-  const p = $('#int-panel');
-  p.hidden = !p.hidden;
-  if (!p.hidden) loadSettings();
-});
-
 $('#int-cellcast-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const msg = $('#int-cellcast-msg');
@@ -450,20 +453,63 @@ function renderTypeToggles(types) {
     box.replaceChildren(el('div', 'empty', 'No appointment types loaded yet — they appear after the first Acuity sync.'));
     return;
   }
-  const list = el('div', 'types');
+  const table = el('table', 'types-table');
+  const head = el('tr');
+  for (const h of ['Visible', 'Appointment type', 'Duration', 'Description']) head.append(el('th', null, h));
+  table.append(head);
   for (const t of types) {
-    const row = el('label', 'type-row');
+    const tr = el('tr');
+
+    // Visible toggle — checked = shown to patients on the booking page.
+    const toggle = el('td', 'types-table__toggle');
     const cb = el('input', 'type-row__cb');
     cb.type = 'checkbox';
-    cb.checked = !t.hidden; // checked = visible to patients
+    cb.checked = !t.hidden;
+    cb.setAttribute('aria-label', `Show "${t.name}" on the booking page`);
     cb.addEventListener('change', () => toggleType(t.id, !cb.checked, cb));
-    const meta = el('div', 'type-row__meta');
-    meta.append(el('span', 'type-row__name', t.name));
-    if (t.duration) meta.append(el('span', 'type-row__sub', `${t.duration} min`));
-    row.append(cb, meta);
-    list.append(row);
+    toggle.append(cb);
+    tr.append(toggle);
+
+    tr.append(el('td', 'types-table__name', t.name));
+    tr.append(el('td', null, t.duration ? `${t.duration} min` : '—'));
+
+    // Editable description — shown on the booking page as the ⓘ explainer.
+    // Saving stores it on the Gateway (overrides whatever Acuity sends).
+    const descCell = el('td', 'types-table__desc');
+    const ta = el('textarea', 'types-table__desc-input');
+    ta.rows = 2;
+    ta.maxLength = 1000;
+    ta.value = t.description || '';
+    ta.placeholder = 'Add a description shown on the booking page…';
+    const actions = el('div', 'types-table__desc-actions');
+    const save = el('button', 'btn btn--sm', 'Save');
+    save.type = 'button';
+    const msg = el('span', 'types-table__desc-msg muted');
+    save.addEventListener('click', () => saveDescription(t.id, ta.value, save, msg));
+    actions.append(save, msg);
+    descCell.append(ta, actions);
+    tr.append(descCell);
+
+    table.append(tr);
   }
-  box.replaceChildren(list);
+  box.replaceChildren(table);
+}
+
+async function saveDescription(id, value, btn, msg) {
+  btn.disabled = true;
+  msg.className = 'types-table__desc-msg muted';
+  msg.textContent = 'Saving…';
+  try {
+    await api(`/appointment-types/${encodeURIComponent(id)}/description`, { method: 'POST', body: { description: value } });
+    msg.className = 'types-table__desc-msg ok-text';
+    msg.textContent = value.trim() ? 'Saved ✓' : 'Cleared ✓';
+  } catch (err) {
+    if (err.status === 401 || err.status === 403) return showLogin();
+    msg.className = 'types-table__desc-msg error';
+    msg.textContent = err.status === 400 ? 'Too long (max 1000).' : 'Save failed.';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function toggleType(id, hidden, cb) {
@@ -479,11 +525,8 @@ async function toggleType(id, hidden, cb) {
   }
 }
 
-$('#types-btn').addEventListener('click', () => {
-  const p = $('#types-panel');
-  p.hidden = !p.hidden;
-  if (!p.hidden) loadTypes();
-});
+// Wire up the tab bar.
+for (const t of TABS) $('#tab-btn-' + t).addEventListener('click', () => showTab(t));
 
 // Decide initial view by probing a gated endpoint.
 api('/metrics').then(showDash).catch(showLogin);
