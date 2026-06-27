@@ -516,14 +516,34 @@ async function saveDescription(id, value, btn, msg) {
 // The portal lives at this admin page's own origin (e.g.
 // https://book.waeyecare.com.au), so build the iframe src from it — no
 // hard-coded domain to drift. CSP frame-ancestors still gates who may embed.
+//
+// The snippet ships a tiny listener so the iframe auto-grows to its
+// content: the portal posts {type:'acuity-portal-resize', height} on every
+// layout change, and this script resizes the iframe to match. The chosen
+// height becomes the INITIAL height (before the first message arrives), so
+// there's no flash of a scrollbar. The listener checks e.origin so only
+// the portal can drive the resize.
 function renderEmbed() {
   const ta = $('#embed-code');
   if (!ta) return;
   const h = Math.min(3000, Math.max(300, parseInt($('#embed-height').value, 10) || 900));
+  const origin = window.location.origin;
   ta.value =
-    `<iframe src="${window.location.origin}"\n` +
+    `<iframe id="acuity-booking" src="${origin}"\n` +
     `        title="Book an appointment"\n` +
-    `        style="width:100%;height:${h}px;border:0;display:block;" loading="lazy"></iframe>`;
+    `        style="width:100%;height:${h}px;border:0;display:block;" loading="lazy"></iframe>\n` +
+    `<script>\n` +
+    `  (function () {\n` +
+    `    var frame = document.getElementById('acuity-booking');\n` +
+    `    window.addEventListener('message', function (e) {\n` +
+    `      if (e.origin !== '${origin}') return;\n` +
+    `      var d = e.data;\n` +
+    `      if (d && d.type === 'acuity-portal-resize' && typeof d.height === 'number') {\n` +
+    `        frame.style.height = d.height + 'px';\n` +
+    `      }\n` +
+    `    });\n` +
+    `  })();\n` +
+    `<\/script>`;
 }
 
 $('#embed-height').addEventListener('input', renderEmbed);

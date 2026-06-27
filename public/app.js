@@ -421,4 +421,21 @@ async function init() {
   }
 }
 
+// ── Auto-resize: report our height to the embedding page ────────────
+// A cross-origin parent can't read the iframe's content height, so we
+// post it on every layout change and the embed snippet's listener grows
+// the iframe to match (no inner scrollbar). No-op when not embedded.
+function reportHeight() {
+  if (window.parent === window) return; // not in an iframe
+  const height = Math.ceil(document.documentElement.scrollHeight);
+  window.parent.postMessage({ type: 'acuity-portal-resize', height }, '*');
+}
+
+if (window.parent !== window && 'ResizeObserver' in window) {
+  // Fires once on observe, then on any body size change (step switches,
+  // calendar/time-panel toggles, error bar, font reflow).
+  new ResizeObserver(reportHeight).observe(document.body);
+  window.addEventListener('load', reportHeight); // backstop for late layout
+}
+
 init();

@@ -52,13 +52,13 @@
           <p id="types-msg" hidden></p>
 
           <h2>Embed on your website</h2>
-          <p class="muted">Paste this snippet into a Code Block on your booking page (e.g. <span class="mono">www.waeyecare.com.au/booking</span>) to show the booking portal inline. Adjust <span class="mono">height</span> to suit your layout.</p>
+          <p class="muted">Paste this snippet into a Code Block on your booking page (e.g. <span class="mono">www.waeyecare.com.au/booking</span>) to show the booking portal inline. It resizes itself to fit its content — the height below is just the starting height before the page loads.</p>
           <div id="embed-panel" class="pw-panel">
             <div class="embed__field">
-              <label class="muted" for="embed-height">Height (px)</label>
+              <label class="muted" for="embed-height">Initial height (px)</label>
               <input id="embed-height" type="number" min="300" max="3000" step="50" value="900" />
             </div>
-            <textarea id="embed-code" class="embed__code mono" rows="3" readonly></textarea>
+            <textarea id="embed-code" class="embed__code mono" rows="12" readonly></textarea>
             <div class="pw-panel__actions">
               <button id="embed-copy-btn" class="btn" type="button">Copy code</button>
               <span id="embed-msg" class="muted"></span>
