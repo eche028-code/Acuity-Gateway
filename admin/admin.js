@@ -531,16 +531,21 @@ function renderEmbed() {
   ta.value =
     `<iframe id="acuity-booking" src="${origin}"\n` +
     `        title="Book an appointment"\n` +
-    `        style="width:100%;height:${h}px;border:0;display:block;" loading="lazy"></iframe>\n` +
+    `        style="width:100%;min-height:300px;height:${h}px;border:0;display:block;" loading="lazy"></iframe>\n` +
     `<script>\n` +
     `  (function () {\n` +
-    `    var frame = document.getElementById('acuity-booking');\n` +
+    `    // The portal posts { type: 'acuity-portal-resize', height: <number> }\n` +
+    `    // from its own origin whenever its content height changes.\n` +
     `    window.addEventListener('message', function (e) {\n` +
-    `      if (e.origin !== '${origin}') return;\n` +
+    `      if (e.origin !== '${origin}') return;            // only trust the portal\n` +
     `      var d = e.data;\n` +
-    `      if (d && d.type === 'acuity-portal-resize' && typeof d.height === 'number') {\n` +
-    `        frame.style.height = d.height + 'px';\n` +
-    `      }\n` +
+    `      if (!d || d.type !== 'acuity-portal-resize' || typeof d.height !== 'number') return;\n` +
+    `      // Re-find the iframe on every message so Squarespace block/Ajax\n` +
+    `      // load order can never leave us holding a stale or null reference.\n` +
+    `      var frame = document.getElementById('acuity-booking');\n` +
+    `      if (frame) frame.style.height = d.height + 'px';\n` +
+    `      // Debug: uncomment to confirm messages arrive in DevTools.\n` +
+    `      // console.log('[acuity] resize ->', d.height);\n` +
     `    });\n` +
     `  })();\n` +
     `<\/script>`;

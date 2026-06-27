@@ -436,6 +436,10 @@ if (window.parent !== window && 'ResizeObserver' in window) {
   // calendar/time-panel toggles, error bar, font reflow).
   new ResizeObserver(reportHeight).observe(document.body);
   window.addEventListener('load', reportHeight); // backstop for late layout
+  // Beat the race where the embedding page (e.g. a Squarespace block loaded
+  // via Ajax) attaches its message listener AFTER our first posts — without
+  // this the frame can sit at its initial height until the next interaction.
+  [100, 500, 1500].forEach((ms) => setTimeout(reportHeight, ms));
 }
 
 init();
